@@ -1,0 +1,16 @@
+{
+  "name": "real-estate-management",
+  "version": "1.0.0",
+  "description": "A Real-Estate Management",
+  "license": "ISC",
+  "author": "Saumyajit Jotdar",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "mongoose": "^9.9.5"
+  }
+}
