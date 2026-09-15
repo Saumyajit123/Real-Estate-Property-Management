@@ -1,0 +1,36 @@
+const mongoose = require("mongoose");
+
+const favouriteSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    property: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Property",
+      required: true,
+    },
+  },
+
+  {
+    timestamps: true,
+  },
+);
+
+// Prevent duplicate favourites
+favouriteSchema.index(
+  {
+    user: 1,
+    property: 1,
+  },
+  {
+    unique: true,
+  },
+);
+
+const FavouriteModel = mongoose.model("Favourite", favouriteSchema);
+
+module.exports = FavouriteModel;
