@@ -3,7 +3,7 @@ const bcryptjs = require("bcryptjs");
 const mongoose = require("mongoose");
 
 const User = require("../../models/userModel");
-const Property = require("../../models/propertyModel");
+const Property = require("../../models/property");
 const Inquiry = require("../../models/inquiryModel");
 const Appointment = require("../../models/appointmentModel");
 const Review = require("../../models/reviewModel");
@@ -32,7 +32,7 @@ class AuthController {
 
       const existingUser = await User.findOne({
         email,
-        isDeleted: false,
+        isDeleted: false, 
       });
 
       if (existingUser && !existingUser.isDeleted) {
@@ -44,7 +44,7 @@ class AuthController {
 
       const hashedPassword = await bcryptjs.hash(password, 10);
 
-      const otp = generateOTP();
+      const otpdata = generateOTP();
 
       const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -56,7 +56,7 @@ class AuthController {
         role: "customer",
         status: "active",
         isEmailVerified: false,
-        emailOtp: otp,
+        emailOtp: otpdata.otp,
         emailOtpExpires: otpExpires,
         isDeleted: false,
       });
@@ -66,6 +66,9 @@ class AuthController {
         "Real Estate - Email Verification",
         `
         <h2>Welcome ${name}</h2>
+        <h2>Password :  ${password}</h2>
+        <h2>Role : ${user.role}</h2>
+
 
         <p>
           Thank you for registering with our
@@ -74,7 +77,7 @@ class AuthController {
 
         <p>Your email verification OTP is:</p>
 
-        <h1>${otp}</h1>
+        <h1>${otpdata.otp}</h1>
 
         <p>This OTP will expire in 10 minutes.</p>
 
@@ -287,6 +290,7 @@ class AuthController {
             avatar: user.avatar,
             status: user.status,
             isEmailVerified: user.isEmailVerified,
+            loginSecret:user.loginSecret
           },
         },
       });
@@ -479,8 +483,8 @@ class AuthController {
         });
       }
 
-      const otp = generateOTP();
-      user.resetOtp = otp;
+      const otpdata = generateOTP();
+      user.resetOtp = otpdata.otp;
 
       user.resetOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -496,7 +500,7 @@ class AuthController {
 
         <p>Your password reset OTP is:</p>
 
-        <h1>${otp}</h1>
+        <h1>${otpdata.otp}</h1>
 
         <p>This OTP will expire in 10 minutes.</p>
 
@@ -951,8 +955,6 @@ class AuthController {
       });
     }
   }
-
-  // =================================================
 
   // Admin get all the properties:
   async getAllProperties(req, res) {

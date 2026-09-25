@@ -32,30 +32,30 @@ const {
   categoryIdSchema,
 } = require("../../validations/categorySchema");
 
-router.all("/register", Validation.validate(registerSchema), authController.register);
+router.post("/register", Validation.validate(registerSchema), authController.register);
 
-router.all(
+router.post(
   "/verify-email",
   Validation.validate(verifyEmailOTPSchema),
   authController.verifyEmailOTP,
 );
 
-router.all(
+router.post(
   "/resend-email-otp",
   Validation.validate(resendEmailOTPSchema),
   authController.resendEmailOTP,
 );
 
-router.all("/login", Validation.validate(loginSchema), authController.login);
+router.post("/login", Validation.validate(loginSchema), authController.login);
 
-router.all(
+router.post(
   "/change-password",
   authMiddleware,
   Validation.validate(changePasswordSchema),
   authController.changePassword
 );
 
-router.all(
+router.post(
   "/forgot-password",
   Validation.validate(forgotPasswordSchema),
   authController.forgotPassword,
@@ -66,6 +66,8 @@ router.all(
   Validation.validate(resetPasswordSchema),
   authController.resetPassword,
 );
+
+router.get("/getprofile",authMiddleware,authController.getProfile)
 
 router.all(
   "/profile/update",
