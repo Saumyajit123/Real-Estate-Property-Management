@@ -4,7 +4,6 @@ const DBConnect = require("./src/config/dbConnect");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const session = require("express-session");
-const path = require("path");
 const indexRouter = require("./src/routes/index");
 
 DBConnect();
