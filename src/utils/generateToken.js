@@ -11,10 +11,11 @@ const generateAccessToken = (user) => {
       userId: user._id,
       email: user.email,
       role: user.role,
+      type: "access"
     },
-    process.env.ACCESS_TOKEN_SECRET,
+    process.env.JWT_ACCESS_SECRET,
     {
-      expiresIn: process.env.ACCESS_TOKEN_EXPIRES || "1h",
+      expiresIn: process.env.JWT_ACCESS_EXPIRES || "1h",
     },
   );
 };
@@ -23,10 +24,11 @@ const generateRefreshToken = (user) => {
   return jwt.sign(
     {
       userId: user._id,
+      type: "refresh"
     },
-    process.env.REFRESH_TOKEN_SECRET,
+    process.env.JWT_REFRESH_SECRET,
     {
-      expiresIn: process.env.REFRESH_TOKEN_EXPIRES || "7d",
+      expiresIn: process.env.JWT_REFRESH_EXPIRES || "7d",
     },
   );
 };

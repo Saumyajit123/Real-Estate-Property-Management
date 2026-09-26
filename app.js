@@ -4,14 +4,13 @@ const DBConnect = require("./src/config/dbConnect");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const session = require("express-session");
-const path = require("path");
 const indexRouter = require("./src/routes/index");
 
 DBConnect();
 
 const app = express();
 
-const Port = process.env.PORT || 3007;
+const Port = process.env.PORT;
 
 app.use(
   cors({

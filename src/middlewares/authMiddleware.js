@@ -27,7 +27,7 @@ const authMiddleware = async (req, res, next) => {
 
     const decodedToken = jwt.decode(token);
 
-    if (!decodedToken?.id) {
+    if (!decodedToken?.userId) {
       return res.status(401).json({
         success: false,
         message: "Invalid token",
@@ -35,7 +35,7 @@ const authMiddleware = async (req, res, next) => {
     }
 
     const user = await User.findOne({
-      _id: decodedToken.id,
+      _id: decodedToken.userId,
       isDeleted: false,
     }).select(
       "_id name email phone role avatar status isEmailVerified +loginSecret",
@@ -56,7 +56,7 @@ const authMiddleware = async (req, res, next) => {
     }
 
     //verify login secret:
-    const verifiedToken = jwt.verify(token, user.loginSecret);
+    const verifiedToken = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
     if (verifiedToken.type !== "access") {
       return res.status(401).json({
