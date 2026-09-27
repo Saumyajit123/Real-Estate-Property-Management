@@ -3,6 +3,8 @@ const bcryptjs = require("bcryptjs");
 const mongoose = require("mongoose");
 
 const User = require("../../models/userModel");
+const Agent = require("../../models/agentmodel");
+const Owner = require("../../models/ownerModel");
 const Property = require("../../models/property");
 const Inquiry = require("../../models/inquiryModel");
 const Appointment = require("../../models/appointmentModel");
@@ -20,19 +22,19 @@ const {
   sendPropertyApprovalEmail,
 } = require("../../services/emailService");
 const createNotification = require("../../services/notificationService");
-const getPagination = require("../../utils/pagination");
-const sendMail = require("../../config/sendMail");
-// const { isError } = require("joi");
+const pagination = require("../../utils/pagination");
+const { transporter, verifyEmailOtp } = require("../../config/sendMail");
+const Otp = require("../../models/otpModel");
 
 class AuthController {
-  // User Registration:
+  // Registration:
   async register(req, res) {
     try {
       const { name, email, password, phone } = req.body;
 
       const existingUser = await User.findOne({
         email,
-        isDeleted: false, 
+        isDeleted: false,
       });
 
       if (existingUser) {
@@ -105,61 +107,86 @@ class AuthController {
   }
 
   // Verify Email OTP:
-  async verifyEmailOTP(req, res) {
+  async verify(req, res) {
     try {
       const { email, otp } = req.body;
+      // Check if all required fields are provided
+      if (!email || !otp) {
+        return res.status(400).json({
+          status: false,
+          message: "All fields are required",
+        });
+      }
+      const existingUser = await User.findOne({ email });
 
-      const user = await User.findOne({ email });
-
-      if (!user) {
+      // Check if email doesn't exists
+      if (!existingUser) {
         return res.status(404).json({
-          success: false,
-          message: "User not found",
+          status: "failed",
+          message: "User doesn't exists",
         });
       }
 
-      if (user.isEmailVerified) {
+      // Check if email is already verified
+      if (existingUser.isVerified) {
         return res.status(400).json({
-          success: false,
+          status: false,
           message: "Email is already verified",
         });
       }
+      // Check if there is a matching email verification OTP
+      const emailVerification = await Otp.findOne({
+        userId: existingUser._id,
+        otp,
+      });
 
-      if (!user.emailOtp || user.emailOtp !== otp) {
+      if (!emailVerification) {
+        if (!existingUser.isVerified) {
+          // console.log(existingUser);
+          await verifyEmailOtp(req, existingUser);
+
+          return res.status(StatusCode.BAD_REQUEST).json({
+            status: false,
+            message: "Invalid OTP, new OTP sent to your email",
+          });
+        }
+
         return res.status(400).json({
-          success: false,
+          status: false,
           message: "Invalid OTP",
         });
       }
 
-      // Check expiry:
-      if (!user.emailOtpExpires || user.emailOtpExpires < new Date()) {
-        return res.status(400).json({
-          success: false,
-          message: "OTP has expired",
+      // Check if OTP is expired
+      const currentTime = new Date();
+      // 10 * 60 * 1000 calculates the expiration period in milliseconds(10 minutes).
+      const expirationTime = new Date(
+        emailVerification.createdAt.getTime() + 10 * 60 * 1000,
+      );
+
+      if (currentTime > expirationTime) {
+        // OTP expired, send new OTP
+        await verifyEmailOTP(req, existingUser);
+        return res.status(StatusCode.BAD_REQUEST).json({
+          status: "failed",
+          message: "OTP expired, new OTP sent to your email",
         });
       }
+      // OTP is valid and not expired, mark email as verified
+      existingUser.isVerified = true;
+      await existingUser.save();
 
-      // Verify email
-      user.isEmailVerified = true;
-
-      // Remove OTP
-      user.emailOtp = undefined;
-      user.emailOtpExpires = undefined;
-
-      await user.save();
-
+      // Delete email verification document
+      await Otp.deleteMany({ userId: existingUser._id });
       return res.status(200).json({
-        success: true,
+        status: true,
         message: "Email verified successfully",
       });
     } catch (error) {
       console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Email verification failed",
-        error: error.message,
+      res.status(500).json({
+        status: false,
+        message: "Unable to verify email, please try again later",
       });
     }
   }
@@ -287,10 +314,10 @@ class AuthController {
             email: user.email,
             phone: user.phone,
             role: user.role,
-            avatar: user.avatar,
+            image: user.image,
             status: user.status,
             isEmailVerified: user.isEmailVerified,
-            loginSecret:user.loginSecret
+            loginSecret: user.loginSecret,
           },
         },
       });
@@ -374,7 +401,7 @@ class AuthController {
   // Update profile:
   async updateProfile(req, res) {
     try {
-      const { name, phone, avatar } = req.body;
+      const { name, phone, image } = req.body;
 
       const user = await User.findById(req.user.id);
 
@@ -474,7 +501,11 @@ class AuthController {
   async forgotPassword(req, res) {
     try {
       const { email } = req.body;
-      const user = await User.findOne({ email });
+
+      const user = await UserModel.findOne({
+        email,
+        isDeleted: false,
+      });
 
       if (!user) {
         return res.status(404).json({
@@ -484,6 +515,7 @@ class AuthController {
       }
 
       const otpdata = generateOTP();
+
       user.resetOtp = otpdata.otp;
 
       user.resetOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -523,78 +555,226 @@ class AuthController {
     }
   }
 
-  // Reset password:
-  async resetPassword(req, res) {
+  // Reset password link:
+  async resetPasswordLink(req, res) {
     try {
-      const { email, otp, newPassword } = req.body;
+      const { email } = req.body;
+      if (!email) {
+        return res.status(StatusCode.BAD_REQUEST).json({
+          status: false,
+          message: "Email field is required",
+        });
+      }
 
       const user = await User.findOne({ email });
 
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
+        return res.status(StatusCode.NOT_FOUND).json({
+          status: false,
+          message: "Email doesn't exist",
         });
       }
 
-      if (!user.resetOtp || user.resetOtp !== otp) {
-        return res.status(400).json({
-          success: false,
-          message: "OTP has expired",
-        });
-      }
+      //Generate token for password reset:
+      const secret = user._id + process.env.JWT_SECRET_KEY;
+      const tokenLink = jwt.sign(
+        {
+          userId: user._id,
+        },
+        secret,
+        { expiresIn: "40m" },
+      );
+      console.log(tokenLink);
 
-      if (!user.resetOtpExpires || user.resetOtpExpires < new Date()) {
-        return res.status(400).json({
-          success: false,
-          message: "OTP has expired",
-        });
-      }
+      // Reset Link and this link generate by frontend developer:
+      const resetLink = `${process.env.CLIENT_URL}/account/reset-password-confirm/${user._id}/${tokenLink}`;
 
-      user.password = await bcryptjs.hash(newPassword, 10);
+      //Send password reset email:
+      await transporter.sendMail({
+        from: process.env.MAIL_FROM,
+        to: user.email,
+        subject: "Password reset link",
+        html: `<p>Hello ${user.name},</p><p>Please <a href="${resetLink}">Click here</a> to reset your password.</p>`,
+      });
 
-      // Clear OTP
-      user.resetOtp = undefined;
-      user.resetOtpExpires = undefined;
-
-      // Invalidate existing login sessions
-      user.loginSecret = undefined;
-      user.refreshTokenHash = undefined;
-      user.refreshTokenExpires = undefined;
-
-      await user.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Password reset successfully. Please login again.",
+      res.status(200).json({
+        status: true,
+        message: "Password reset email sent. Please check your email.",
       });
     } catch (error) {
-      console.error(error);
-
       return res.status(500).json({
         success: false,
-        message: "Failed to reset password",
-        error: error.message,
+        message: error.message,
       });
     }
   }
 
-  //   ===========================================================
+  // Reset password:
+  async resetPassword(req, res) {
+    try {
+      const { password, confirm_password } = req.body;
+      const { id, token } = req.params;
+      const user = await User.findById(id);
+
+      if (!user) {
+        return res.status(StatusCode.BAD_REQUEST).json({
+          status: false,
+          message: "User not found",
+        });
+      }
+
+      //Validate token check:
+      const new_secret = user._id + process.env.JWT_SECRET_KEY;
+      jwt.verify(token, new_secret);
+
+      if (!password || !confirm_password) {
+        return res.status(400).json({
+          status: false,
+          message: "New Password and Confirm New Password are required",
+        });
+      }
+
+      if (password !== confirm_password) {
+        return res.status(StatusCode.BAD_REQUEST).json({
+          status: false,
+          message: "New Password and Confirm New Password don't match",
+        });
+      }
+
+      // Generate salt and hash new password:
+      const salt = await bcryptjs.genSalt(10);
+      const newHashPassword = await bcryptjs.hash(password, salt);
+
+      // Update user's password:
+      await User.findByIdAndUpdate(user._id, {
+        $set: { password: newHashPassword },
+      });
+
+      // Send success response:
+      res.status(StatusCode.OK).json({
+        status: "success",
+        message: "Password reset successfully",
+      });
+    } catch (error) {
+      return res.status(StatusCode.SERVER_ERROR).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  // ======================== USERS =====================================
 
   // Admin-get all users:
   async getAllUsers(req, res) {
     try {
-      const users = await User.find()
-        .select(
-          "-password -loginSecret -refreshTokenHash -emailOtp -emailOtpExpires -resetOtp -resetOtpExpires",
-        )
-        .sort({ createdAt: -1 });
+      const {
+        search,
+        role,
+        status,
+        isEmailVerified,
+        sortBy = "createdAt",
+        sortOrder = "desc",
+      } = req.query;
+
+      const { page, limit, skip } = pagination(req);
+
+      // const users = await User.find()
+      //   .select(
+      //     "-password -loginSecret -refreshTokenHash -emailOtp -emailOtpExpires -resetOtp -resetOtpExpires",
+      //   )
+      //   .sort({ createdAt: -1 });
+
+      const filter = { isDeleted: false };
+
+      // Search by name, email, phone:
+      if (search) {
+        filter.$or = [
+          {
+            name: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            email: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            phone: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+        ];
+      }
+
+      // Filter by role:
+      if (role) filter.role = role;
+
+      // Filter by status:
+      if (status) filter.status = status;
+
+      // Filter by email verification:
+      if (isEmailVerified !== undefined)
+        filter.isEmailVerified = isEmailVerified === "true";
+
+      // SORT:
+      const allowedSortFields = [
+        "name",
+        "email",
+        "createdAt",
+        "updatedAt",
+        "status",
+        "role",
+      ];
+
+      const finalSortBy = allowedSortFields.includes(sortBy)
+        ? sortBy
+        : "createdAt";
+
+      const finalSortOrder = sortOrder === "asc" ? 1 : -1;
+
+      const sort = {
+        [finalSortBy]: finalSortOrder,
+      };
+
+      const [users, totalUsers] = await Promise.all([
+        User.find(filter)
+          .select("-password -loginSecret -refreshTokenHash")
+          .sort(sort)
+          .skip(skip)
+          .limit(limit),
+
+        User.countDocuments(filter),
+      ]);
+
+      const totalPages = Math.ceil(totalUsers / limit);
 
       return res.status(200).json({
         success: true,
         message: "Users fetched successfully",
         count: users.length,
         data: users,
+        pagination: {
+          currentPage: page,
+          limit,
+          totalUsers,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+        filters: {
+          search: search || "",
+          role: role || "",
+          status: status || "",
+          isEmailVerified:
+            isEmailVerified !== undefined ? isEmailVerified === "true" : null,
+          sortBy: finalSortBy,
+          sortOrder: finalSortOrder === 1 ? "asc" : "desc",
+        },
       });
     } catch (error) {
       console.error(error);
@@ -640,64 +820,65 @@ class AuthController {
   }
 
   // Admin-create user:
-  async createUser(req, res) {
-    try {
-      const { name, email, password, phone, role, status } = req.body;
+  // async createUser(req, res) {
+  //   try {
+  //     const { name, email, password, phone, role, status } = req.body;
 
-      const existingUser = await User.findOne({ email });
+  //     const existingUser = await User.findOne({ email });
 
-      if (existingUser && !existingUser.isDeleted) {
-        return res.status(409).json({
-          success: false,
-          message: "User with this email already exists",
-        });
-      }
+  //     if (existingUser && !existingUser.isDeleted) {
+  //       return res.status(409).json({
+  //         success: false,
+  //         message: "User with this email already exists",
+  //       });
+  //     }
 
-      const hashedPassword = await bcryptjs.hash(password, 10);
+  //     const hashedPassword = await bcryptjs.hash(password, 10);
 
-      const user = await User.create({
-        name,
-        email,
-        password: hashedPassword,
-        phone,
-        role: role || "customer",
-        status: status || "active",
-        isEmailVerified: true,
-        isDeleted: false,
-      });
+  //     const user = await User.create({
+  //       name,
+  //       email,
+  //       password: hashedPassword,
+  //       phone,
+  //       role: role || "customer",
+  //       status: status || "active",
+  //       isEmailVerified: true,
+  //       isDeleted: false,
+  //     });
 
-      return res.status(201).json({
-        success: true,
-        message: "User created successfully",
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-          status: user.status,
-          isEmailVerified: user.isEmailVerified,
-        },
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(201).json({
+  //       success: true,
+  //       message: "User created successfully",
+  //       data: {
+  //         _id: user._id,
+  //         name: user.name,
+  //         email: user.email,
+  //         phone: user.phone,
+  //         role: user.role,
+  //         status: user.status,
+  //         isEmailVerified: user.isEmailVerified,
+  //       },
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to create user",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to create user",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Admin-update user:
   async updateUser(req, res) {
     try {
       const { id } = req.params;
 
-      const { name, phone, role, status, avatar } = req.body;
-
-      const user = await User.findById(id);
+      const user = await UserModel.findOne({
+        _id: id,
+        isDeleted: false,
+      });
 
       if (!user) {
         return res.status(404).json({
@@ -706,41 +887,42 @@ class AuthController {
         });
       }
 
-      if (name !== undefined) {
-        user.name = name;
+      const { name, email, phone, image } = req.body;
+
+      // Check duplicate email
+      if (email && email !== user.email) {
+        const existingUser = await UserModel.findOne({
+          email,
+          _id: { $ne: id },
+          isDeleted: false,
+        });
+
+        if (existingUser) {
+          return res.status(409).json({
+            success: false,
+            message: "Email already exists",
+          });
+        }
       }
 
-      if (phone !== undefined) {
-        user.phone = phone;
-      }
-
-      if (role !== undefined) {
-        user.role = role;
-      }
-
-      if (status !== undefined) {
-        user.status = status;
-      }
-
-      if (avatar !== undefined) {
-        user.avatar = avatar;
-      }
-
-      await user.save();
+      const updatedUser = await User.findByIdAndUpdate(
+        id,
+        {
+          ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(phone !== undefined && { phone }),
+          ...(image !== undefined && { image }),
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      ).select("-password -loginSecret -refreshTokenHash");
 
       return res.status(200).json({
         success: true,
         message: "User updated successfully",
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-          avatar: user.avatar,
-          status: user.status,
-          isEmailVerified: user.isEmailVerified,
-        },
+        user: updatedUser,
       });
     } catch (error) {
       console.error(error);
@@ -869,15 +1051,10 @@ class AuthController {
     try {
       const { id } = req.params;
 
-      // Prevent admin from deleting himself
-      if (req.user.id === id) {
-        return res.status(400).json({
-          success: false,
-          message: "You cannot delete your own account",
-        });
-      }
-
-      const user = await User.findByIdAndDelete(id);
+      const user = await UserModel.findOne({
+        _id: id,
+        isDeleted: false,
+      });
 
       if (!user) {
         return res.status(404).json({
@@ -885,6 +1062,8 @@ class AuthController {
           message: "User not found",
         });
       }
+
+      await UserModel.findByIdAndDelete(id);
 
       return res.status(200).json({
         success: true,
@@ -906,15 +1085,7 @@ class AuthController {
     try {
       const { id } = req.params;
 
-      // Admin cannot delete himself
-      if (req.user.id === id) {
-        return res.status(400).json({
-          success: false,
-          message: "You cannot delete your own account",
-        });
-      }
-
-      const user = await User.findOne({
+      const user = await UserModel.findOne({
         _id: id,
         isDeleted: false,
       });
@@ -926,35 +1097,847 @@ class AuthController {
         });
       }
 
-      // Soft delete
-      user.isDeleted = true;
-      user.deletedAt = new Date();
-      user.deletedBy = req.user.id;
-
-      // Disable account
-      user.status = "inactive";
-
-      // Invalidate login
-      user.loginSecret = undefined;
-      user.refreshTokenHash = undefined;
-      user.refreshTokenExpires = undefined;
-
-      await user.save();
+      await UserModel.findByIdAndUpdate(
+        id,
+        {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: req.user._id,
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      );
 
       return res.status(200).json({
         success: true,
-        message: "User deleted successfully",
+        message: "User soft deleted successfully",
       });
     } catch (error) {
       console.error(error);
 
       return res.status(500).json({
         success: false,
-        message: "Failed to delete user",
+        message: "Failed to soft delete user",
         error: error.message,
       });
     }
   }
+
+  // ========================== AGENTS ========================================
+
+  // Get all agents:
+  async getAllAgents(req, res) {
+    try {
+      const {
+        search,
+        status,
+        isEmailVerified,
+        sortBy = "createdAt",
+        sortOrder = "desc",
+      } = req.query;
+
+      const { page, limit, skip } = pagination(req);
+
+      // FILTER:
+      const filter = {
+        role: "agent",
+        isDeleted: false,
+      };
+
+      // Search by name, email or phone
+      if (search) {
+        filter.$or = [
+          {
+            name: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            email: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            phone: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+        ];
+      }
+
+      if (status) {
+        filter.status = status;
+      }
+
+      // Email verification filter
+      if (isEmailVerified !== undefined) {
+        filter.isEmailVerified = isEmailVerified === "true";
+      }
+
+      // SORT:
+      const allowedSortFields = [
+        "name",
+        "email",
+        "createdAt",
+        "updatedAt",
+        "status",
+      ];
+
+      const finalSortBy = allowedSortFields.includes(sortBy)
+        ? sortBy
+        : "createdAt";
+
+      const finalSortOrder = sortOrder === "asc" ? 1 : -1;
+
+      const sort = {
+        [finalSortBy]: finalSortOrder,
+      };
+
+      const [agents, totalAgents] = await Promise.all([
+        Agent.find(filter)
+          .select("-password -loginSecret -refreshTokenHash")
+          .sort(sort)
+          .skip(skip)
+          .limit(limit),
+
+        Agent.countDocuments(filter),
+      ]);
+
+      const totalPages = Math.ceil(totalAgents / limit);
+
+      return res.status(200).json({
+        success: true,
+        message: "Agents fetched successfully",
+        pagination: {
+          currentPage: page,
+          limit,
+          totalAgents,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+        filters: {
+          search: search || "",
+          status: status || "",
+          isEmailVerified:
+            isEmailVerified !== undefined ? isEmailVerified === "true" : null,
+          sortBy: finalSortBy,
+          sortOrder: finalSortOrder === 1 ? "asc" : "desc",
+        },
+
+        agents,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to get agents",
+        error: error.message,
+      });
+    }
+  }
+
+  // Get agent by ID:
+  async getAgentById(req, res) {
+    try {
+      const { id } = req.params;
+
+      const agent = await Agent.findOne({
+        _id: id,
+        role: "agent",
+        isDeleted: false,
+      }).select("-password -loginSecret -refreshTokenHash");
+
+      if (!agent) {
+        return res.status(404).json({
+          success: false,
+          message: "Agent not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        agent,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to get agent",
+        error: error.message,
+      });
+    }
+  }
+
+  // Update Agent:
+  async updateAgent(req, res) {
+    try {
+      const { id } = req.params;
+
+      const agent = await Agent.findOne({
+        _id: id,
+        role: "agent",
+        isDeleted: false,
+      });
+
+      if (!agent) {
+        return res.status(404).json({
+          success: false,
+          message: "Agent not found",
+        });
+      }
+
+      const { name, email, phone, image } = req.body;
+
+      if (email && email !== agent.email) {
+        const existingAgent = await Agent.findOne({
+          email,
+          _id: { $ne: id },
+          isDeleted: false,
+        });
+
+        if (existingAgent) {
+          return res.status(409).json({
+            success: false,
+            message: "Email already exists",
+          });
+        }
+      }
+
+      const updatedAgent = await Agent.findByIdAndUpdate(
+        id,
+        {
+          ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(phone !== undefined && { phone }),
+          ...(image !== undefined && { image }),
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      ).select("-password -loginSecret -refreshTokenHash");
+
+      return res.status(200).json({
+        success: true,
+        message: "Agent updated successfully",
+        agent: updatedAgent,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update agent",
+        error: error.message,
+      });
+    }
+  }
+
+  // Update agent role:
+  async updateAgentRole(req, res) {
+    try {
+      const { id } = req.params;
+      const { role } = req.body;
+
+      const allowedRoles = ["agent", "owner", "customer"];
+
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid role",
+        });
+      }
+
+      const agent = await Agent.findOne({
+        _id: id,
+        role: "agent",
+        isDeleted: false,
+      });
+
+      if (!agent) {
+        return res.status(404).json({
+          success: false,
+          message: "Agent not found",
+        });
+      }
+
+      agent.role = role;
+
+      // Invalidate current sessions after role change
+      agent.loginSecret = undefined;
+      agent.refreshTokenHash = undefined;
+      agent.refreshTokenExpires = undefined;
+
+      await agent.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Agent role updated successfully",
+        role: agent.role,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update agent role",
+        error: error.message,
+      });
+    }
+  }
+
+  // Update agent status:
+  async updateAgentStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const allowedStatuses = ["active", "inactive", "blocked"];
+
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid status. Allowed: active, inactive, blocked",
+        });
+      }
+
+      const agent = await Agent.findById(id);
+
+      if (!agent) {
+        return res.status(404).json({
+          success: false,
+          message: "Agent not found",
+        });
+      }
+
+      agent.status = status;
+
+      // If account is disabled,
+      // invalidate existing login
+      if (status === "inactive" || status === "blocked") {
+        agent.loginSecret = undefined;
+        agent.refreshTokenHash = undefined;
+        agent.refreshTokenExpires = undefined;
+      }
+
+      await agent.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Agent status updated successfully",
+        data: {
+          _id: agent._id,
+          name: agent.name,
+          email: agent.email,
+          status: agent.status,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update agent status",
+        error: error.message,
+      });
+    }
+  }
+
+  // Delete Agent:
+  async deleteAgent(req, res) {
+    try {
+      const { id } = req.params;
+
+      const agent = await Agent.findOne({
+        _id: id,
+        role: "agent",
+        isDeleted: false,
+      });
+
+      if (!agent) {
+        return res.status(404).json({
+          success: false,
+          message: "Agent not found",
+        });
+      }
+
+      await Agent.findByIdAndDelete(id);
+
+      return res.status(200).json({
+        success: true,
+        message: "Agent deleted successfully",
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to delete agent",
+        error: error.message,
+      });
+    }
+  }
+
+  // Agent soft-delete:
+  async softDeleteAgent(req, res) {
+    try {
+      const { id } = req.params;
+
+      const agent = await Agent.findOne({
+        _id: id,
+        role: "agent",
+        isDeleted: false,
+      });
+
+      if (!agent) {
+        return res.status(404).json({
+          success: false,
+          message: "Agent not found",
+        });
+      }
+
+      await Agent.findByIdAndUpdate(
+        id,
+        {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: req.user._id,
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Agent soft deleted successfully",
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to soft delete agent",
+        error: error.message,
+      });
+    }
+  }
+
+  // =========================== OWNERS ======================================
+
+  // Get all owners:
+  async getAllOwners(req, res) {
+    try {
+      const {
+        search,
+        status,
+        isEmailVerified,
+        sortBy = "createdAt",
+        sortOrder = "desc",
+      } = req.query;
+
+      const { page, limit, skip } = pagination(req);
+
+      // FILTER:
+      const filter = {
+        role: "owner",
+        isDeleted: false,
+      };
+
+      // Search by name, email or phone
+      if (search) {
+        filter.$or = [
+          {
+            name: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            email: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            phone: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+        ];
+      }
+
+      // Status filter
+      if (status) {
+        filter.status = status;
+      }
+
+      // Email verification filter
+      if (isEmailVerified !== undefined) {
+        filter.isEmailVerified = isEmailVerified === "true";
+      }
+
+      // SORT:
+      const allowedSortFields = [
+        "name",
+        "email",
+        "createdAt",
+        "updatedAt",
+        "status",
+      ];
+
+      const finalSortBy = allowedSortFields.includes(sortBy)
+        ? sortBy
+        : "createdAt";
+
+      const finalSortOrder = sortOrder === "asc" ? 1 : -1;
+
+      const sort = {
+        [finalSortBy]: finalSortOrder,
+      };
+
+      const [owners, totalOwners] = await Promise.all([
+        Owner.find(filter)
+          .select("-password -loginSecret -refreshTokenHash")
+          .sort(sort)
+          .skip(skip)
+          .limit(limit),
+
+        Owner.countDocuments(filter),
+      ]);
+
+      const totalPages = Math.ceil(totalOwners / limit);
+
+      return res.status(200).json({
+        success: true,
+        message: "Owners fetched successfully",
+        pagination: {
+          currentPage: page,
+          limit,
+          totalOwners,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+        filters: {
+          search: search || "",
+          status: status || "",
+          isEmailVerified:
+            isEmailVerified !== undefined ? isEmailVerified === "true" : null,
+          sortBy: finalSortBy,
+          sortOrder: finalSortOrder === 1 ? "asc" : "desc",
+        },
+
+        owners,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to get owners",
+        error: error.message,
+      });
+    }
+  }
+
+  // Get owner by ID:
+  async getOwnerById(req, res) {
+    try {
+      const { id } = req.params;
+
+      const owner = await Owner.findOne({
+        _id: id,
+        role: "owner",
+        isDeleted: false,
+      }).select("-password -loginSecret -refreshTokenHash");
+
+      if (!owner) {
+        return res.status(404).json({
+          success: false,
+          message: "Owner not found",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        owner,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to get owner",
+        error: error.message,
+      });
+    }
+  }
+
+  // Update owner:
+  async updateOwner(req, res) {
+    try {
+      const { id } = req.params;
+
+      const owner = await Owner.findOne({
+        _id: id,
+        role: "owner",
+        isDeleted: false,
+      });
+
+      if (!owner) {
+        return res.status(404).json({
+          success: false,
+          message: "Owner not found",
+        });
+      }
+
+      const { name, email, phone, image } = req.body;
+
+      if (email && email !== owner.email) {
+        const existingOwner = await Owner.findOne({
+          email,
+          _id: { $ne: id },
+          isDeleted: false,
+        });
+
+        if (existingOwner) {
+          return res.status(409).json({
+            success: false,
+            message: "Email already exists",
+          });
+        }
+      }
+
+      const updatedOwner = await Owner.findByIdAndUpdate(
+        id,
+        {
+          ...(name !== undefined && { name }),
+          ...(email !== undefined && { email }),
+          ...(phone !== undefined && { phone }),
+          ...(image !== undefined && { image }),
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      ).select("-password -loginSecret -refreshTokenHash");
+
+      return res.status(200).json({
+        success: true,
+        message: "Owner updated successfully",
+        owner: updatedOwner,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update owner",
+        error: error.message,
+      });
+    }
+  }
+
+  // Update owner role:
+  async updateOwnerRole(req, res) {
+    try {
+      const { id } = req.params;
+      const { role } = req.body;
+
+      const allowedRoles = ["owner", "agent", "customer"];
+
+      if (!allowedRoles.includes(role)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid role",
+        });
+      }
+
+      const owner = await Owner.findOne({
+        _id: id,
+        role: "owner",
+        isDeleted: false,
+      });
+
+      if (!owner) {
+        return res.status(404).json({
+          success: false,
+          message: "Owner not found",
+        });
+      }
+
+      owner.role = role;
+
+      // Invalidate current sessions
+      owner.loginSecret = undefined;
+      owner.refreshTokenHash = undefined;
+      owner.refreshTokenExpires = undefined;
+
+      await owner.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Owner role updated successfully",
+        role: owner.role,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update owner role",
+        error: error.message,
+      });
+    }
+  }
+
+  // Update owner status:
+  async updateOwnerStatus(req, res) {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const allowedStatus = ["active", "inactive", "blocked"];
+
+      if (!allowedStatus.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid status",
+        });
+      }
+
+      const owner = await Owner.findOne({
+        _id: id,
+        role: "owner",
+        isDeleted: false,
+      });
+
+      if (!owner) {
+        return res.status(404).json({
+          success: false,
+          message: "Owner not found",
+        });
+      }
+
+      owner.status = status;
+
+      if (status !== "active") {
+        owner.loginSecret = undefined;
+        owner.refreshTokenHash = undefined;
+        owner.refreshTokenExpires = undefined;
+      }
+
+      await owner.save();
+
+      return res.status(200).json({
+        success: true,
+        message: "Owner status updated successfully",
+        status: owner.status,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update owner status",
+        error: error.message,
+      });
+    }
+  }
+
+  // Delete owner:
+  async deleteOwner(req, res) {
+    try {
+      const { id } = req.params;
+
+      const owner = await Owner.findOne({
+        _id: id,
+        role: "owner",
+        isDeleted: false,
+      });
+
+      if (!owner) {
+        return res.status(404).json({
+          success: false,
+          message: "Owner not found",
+        });
+      }
+
+      await Owner.findByIdAndDelete(id);
+
+      return res.status(200).json({
+        success: true,
+        message: "Owner deleted successfully",
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to delete owner",
+        error: error.message,
+      });
+    }
+  }
+
+  // Soft-delete owner:
+  async softDeleteOwner(req, res) {
+    try {
+      const { id } = req.params;
+
+      const owner = await Owner.findOne({
+        _id: id,
+        role: "owner",
+        isDeleted: false,
+      });
+
+      if (!owner) {
+        return res.status(404).json({
+          success: false,
+          message: "Owner not found",
+        });
+      }
+
+      await Owner.findByIdAndUpdate(
+        id,
+        {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: req.user._id,
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: "Owner soft deleted successfully",
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to soft delete owner",
+        error: error.message,
+      });
+    }
+  }
+
+  // =========================== PROPERTY =====================================
 
   // Admin get all the properties:
   async getAllProperties(req, res) {
@@ -1220,7 +2203,7 @@ class AuthController {
     }
   }
 
-  //=================================================================
+  //============================ INQUIRY =====================================
 
   // Admin-get all inquiries:
   async getAllInquiries(req, res) {
@@ -1631,7 +2614,7 @@ class AuthController {
     }
   }
 
-  // ================================================================
+  // =========================== CATEGORY =====================================
 
   // Admin-create category:
   async createCategory(req, res) {

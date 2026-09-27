@@ -84,7 +84,11 @@ const changePasswordSchema = Joi.object({
 // ==========================================================
 
 const forgotPasswordSchema = Joi.object({
-  email: Joi.string().email().lowercase().trim().required(),
+  email: Joi.string().trim().email().required().messages({
+    "string.email": "Please provide a valid email address",
+    "string.empty": "Email is required",
+    "any.required": "Email is required",
+  }),
 });
 
 // ==========================================================
@@ -92,38 +96,30 @@ const forgotPasswordSchema = Joi.object({
 // ==========================================================
 
 const resetPasswordSchema = Joi.object({
-  email: Joi.string().email().lowercase().trim().required(),
+  email: Joi.string().trim().email().required().messages({
+    "string.email": "Please provide a valid email address",
+    "string.empty": "Email is required",
+    "any.required": "Email is required",
+  }),
 
-  otp: Joi.string()
-    .length(6)
-    .pattern(/^[0-9]+$/)
-    .required(),
+  otp: Joi.string().trim().length(6).required().messages({
+    "string.length": "OTP must be 6 digits",
+    "string.empty": "OTP is required",
+    "any.required": "OTP is required",
+  }),
 
-  newPassword: Joi.string().min(6).max(100).required(),
-});
-
-// ==========================================================
-// ADMIN CREATE USER
-// ==========================================================
-
-const createUserSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(100).required(),
-
-  email: Joi.string().email().lowercase().trim().required(),
-
-  password: Joi.string().min(6).max(100).required(),
-
-  phone: Joi.string()
-    .pattern(/^[0-9+\-\s()]{7,20}$/)
-    .optional(),
-
-  role: Joi.string()
-    .valid("admin", "agent", "owner", "customer")
-    .default("customer"),
-
-  status: Joi.string().valid("active", "inactive", "blocked").default("active"),
-
-  avatar: Joi.string().uri().optional(),
+  newPassword: Joi.string().trim().min(6).max(15).required().messages({
+    "string.empty": "Password is required",
+    "string.min": "Password must be at least 6 characters",
+    "string.max": "Password cannot exceed 10 characters",
+    "any.required": "Password is required",
+  }),
+  
+  confirmPassword: Joi.string().trim().required().valid(Joi.ref("newPassword")).messages({
+      "string.empty": "Confirm password is required",
+      "any.only": "Confirm password must match new password",
+      "any.required": "Confirm password is required",
+    }),
 });
 
 // ==========================================================
@@ -182,23 +178,6 @@ const userIdSchema = Joi.object({
     .required(),
 });
 
-// ==========================================================
-// CREATE AGENT
-// ==========================================================
-
-const createAgentSchema = Joi.object({
-  name: Joi.string().trim().min(2).max(100).required(),
-
-  email: Joi.string().email().lowercase().trim().required(),
-
-  password: Joi.string().min(6).max(100).required(),
-
-  phone: Joi.string()
-    .pattern(/^[0-9+\-\s()]{7,20}$/)
-    .optional(),
-
-  avatar: Joi.string().uri().optional(),
-});
 
 module.exports = {
   registerSchema,
@@ -210,10 +189,8 @@ module.exports = {
   changePasswordSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
-  createUserSchema,
   updateUserSchema,
   updateUserRoleSchema,
   updateUserStatusSchema,
   userIdSchema,
-  createAgentSchema,
 };

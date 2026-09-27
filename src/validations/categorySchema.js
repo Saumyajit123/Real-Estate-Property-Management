@@ -25,6 +25,24 @@ const updateCategorySchema = Joi.object({
 });
 
 // ==========================================================
+// GET ALL CATEGORIES
+// ==========================================================
+
+const getAllCategorySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+
+  limit: Joi.number().integer().min(1).max(100).default(10),
+
+  search: Joi.string().trim().allow("").optional(),
+
+  sortBy: Joi.string()
+    .valid("name", "createdAt", "updatedAt")
+    .default("createdAt"),
+
+  sortOrder: Joi.string().valid("asc", "desc").default("desc"),
+});
+
+// ==========================================================
 // CATEGORY ID
 // ==========================================================
 
@@ -36,6 +54,7 @@ const categoryIdSchema = Joi.object({
 
 module.exports = {
   createCategorySchema,
+  getAllCategorySchema,
   updateCategorySchema,
   categoryIdSchema,
 };

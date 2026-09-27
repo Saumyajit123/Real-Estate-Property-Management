@@ -18,16 +18,15 @@ const {
   changePasswordSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
-  createUserSchema,
   updateUserSchema,
   updateUserRoleSchema,
   updateUserStatusSchema,
   userIdSchema,
-  createAgentSchema,
 } = require("../../validations/userSchema");
 
 const {
   createCategorySchema,
+  getAllCategorySchema,
   updateCategorySchema,
   categoryIdSchema,
 } = require("../../validations/categorySchema");
@@ -37,7 +36,7 @@ router.post("/register", Validation.validate(registerSchema), authController.reg
 router.post(
   "/verify-email",
   Validation.validate(verifyEmailOTPSchema),
-  authController.verifyEmailOTP,
+  authController.verify,
 );
 
 router.post(
@@ -77,13 +76,7 @@ router.all(
   authController.updateProfile,
 );
 
-router.all(
-  "/admin/users/create",
-  authMiddleware,
-  authorizeRoles("admin"),
-  Validation.validate(createUserSchema),
-  authController.createUser,
-);
+// ========================== USERS =======================================
 
 router.all(
   "/admin/users/:id/update",
@@ -124,13 +117,6 @@ router.all(
   authController.getAllUsers,
 );
 
-router.all(
-  "/admin/users/create",
-  authMiddleware,
-  authorizeRoles("admin"),
-  Validation.validate(createAgentSchema),
-  authController.createUser,
-);
 
 router.all(
   "/admin/users/:id",
@@ -140,12 +126,22 @@ router.all(
   authController.getUserById,
 );
 
+// ==================================== CATEGORY ========================================
+
 router.all(
   "/admin/categories/create",
   authMiddleware,
   authorizeRoles("admin"),
   Validation.validate(createCategorySchema),
   authController.createCategory,
+);
+
+router.all(
+  "/admin/categories/getall", 
+  authMiddleware,
+  authorizeRoles("admin"),
+  Validation.validate(getAllCategorySchema),
+  authController.getAllCategories,
 );
 
 router.all(
@@ -163,5 +159,8 @@ router.all(
   Validation.validate(categoryIdSchema),
   authController.deleteCategory,
 );
+
+
+//====================================== 
 
 module.exports = router;
