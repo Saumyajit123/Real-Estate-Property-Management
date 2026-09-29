@@ -49,13 +49,22 @@ const propertyReviewSchema = Joi.object({
 });
 
 // ==========================================================
-// REJECT REVIEW
+// REVIEW ACTION
 // ==========================================================
 
-const rejectReviewSchema = Joi.object({
+const reviewActionSchema = Joi.object({
   id: Joi.string()
     .pattern(/^[0-9a-fA-F]{24}$/)
-    .required(),
+    .required()
+    .messages({
+      "string.pattern.base": "Invalid review ID",
+      "any.required": "Review ID is required",
+    }),
+
+  action: Joi.string().valid("approve", "reject").required().messages({
+    "any.only": "Action must be approve or reject",
+    "any.required": "Review action is required",
+  }),
 
   reason: Joi.string().trim().max(1000).allow("").optional(),
 });
@@ -65,5 +74,5 @@ module.exports = {
   updateReviewSchema,
   reviewIdSchema,
   propertyReviewSchema,
-  rejectReviewSchema,
+  reviewActionSchema,
 };

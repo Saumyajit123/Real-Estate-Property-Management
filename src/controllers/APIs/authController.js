@@ -871,123 +871,123 @@ class AuthController {
   // }
 
   // Admin-update user:
-  async updateUser(req, res) {
-    try {
-      const { id } = req.params;
+  // async updateUser(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const user = await UserModel.findOne({
-        _id: id,
-        isDeleted: false,
-      });
+  //     const user = await UserModel.findOne({
+  //       _id: id,
+  //       isDeleted: false,
+  //     });
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+  //     if (!user) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "User not found",
+  //       });
+  //     }
 
-      const { name, email, phone, image } = req.body;
+  //     const { name, email, phone, image } = req.body;
 
-      // Check duplicate email
-      if (email && email !== user.email) {
-        const existingUser = await UserModel.findOne({
-          email,
-          _id: { $ne: id },
-          isDeleted: false,
-        });
+  //     // Check duplicate email
+  //     if (email && email !== user.email) {
+  //       const existingUser = await UserModel.findOne({
+  //         email,
+  //         _id: { $ne: id },
+  //         isDeleted: false,
+  //       });
 
-        if (existingUser) {
-          return res.status(409).json({
-            success: false,
-            message: "Email already exists",
-          });
-        }
-      }
+  //       if (existingUser) {
+  //         return res.status(409).json({
+  //           success: false,
+  //           message: "Email already exists",
+  //         });
+  //       }
+  //     }
 
-      const updatedUser = await User.findByIdAndUpdate(
-        id,
-        {
-          ...(name !== undefined && { name }),
-          ...(email !== undefined && { email }),
-          ...(phone !== undefined && { phone }),
-          ...(image !== undefined && { image }),
-        },
-        {
-          new: true,
-          runValidators: true,
-        },
-      ).select("-password -loginSecret -refreshTokenHash");
+  //     const updatedUser = await User.findByIdAndUpdate(
+  //       id,
+  //       {
+  //         ...(name !== undefined && { name }),
+  //         ...(email !== undefined && { email }),
+  //         ...(phone !== undefined && { phone }),
+  //         ...(image !== undefined && { image }),
+  //       },
+  //       {
+  //         new: true,
+  //         runValidators: true,
+  //       },
+  //     ).select("-password -loginSecret -refreshTokenHash");
 
-      return res.status(200).json({
-        success: true,
-        message: "User updated successfully",
-        user: updatedUser,
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "User updated successfully",
+  //       user: updatedUser,
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update user",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to update user",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Admin-change role of user:
-  async updateUserRole(req, res) {
-    try {
-      const { id } = req.params;
-      const { role } = req.body;
+  // async updateUserRole(req, res) {
+  //   try {
+  //     const { id } = req.params;
+  //     const { role } = req.body;
 
-      const allowedRoles = ["admin", "agent", "owner", "customer"];
+  //     const allowedRoles = ["admin", "agent", "owner", "customer"];
 
-      if (!allowedRoles.includes(role)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid role. Allowed roles: admin, agent, owner, customer",
-        });
-      }
+  //     if (!allowedRoles.includes(role)) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "Invalid role. Allowed roles: admin, agent, owner, customer",
+  //       });
+  //     }
 
-      const user = await User.findById(id);
+  //     const user = await User.findById(id);
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+  //     if (!user) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "User not found",
+  //       });
+  //     }
 
-      user.role = role;
+  //     user.role = role;
 
-      // Invalidate current session after role change
-      user.loginSecret = undefined;
-      user.refreshTokenHash = undefined;
-      user.refreshTokenExpires = undefined;
+  //     // Invalidate current session after role change
+  //     user.loginSecret = undefined;
+  //     user.refreshTokenHash = undefined;
+  //     user.refreshTokenExpires = undefined;
 
-      await user.save();
+  //     await user.save();
 
-      return res.status(200).json({
-        success: true,
-        message: "User role updated successfully",
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "User role updated successfully",
+  //       data: {
+  //         _id: user._id,
+  //         name: user.name,
+  //         email: user.email,
+  //         role: user.role,
+  //       },
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update user role",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to update user role",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Admin-update user status:
   async updateUserStatus(req, res) {
@@ -1047,83 +1047,83 @@ class AuthController {
   }
 
   // Admin-delete user:
-  async deleteUser(req, res) {
-    try {
-      const { id } = req.params;
+  // async deleteUser(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const user = await UserModel.findOne({
-        _id: id,
-        isDeleted: false,
-      });
+  //     const user = await UserModel.findOne({
+  //       _id: id,
+  //       isDeleted: false,
+  //     });
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+  //     if (!user) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "User not found",
+  //       });
+  //     }
 
-      await UserModel.findByIdAndDelete(id);
+  //     await UserModel.findByIdAndDelete(id);
 
-      return res.status(200).json({
-        success: true,
-        message: "User deleted successfully",
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "User deleted successfully",
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to delete user",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to delete user",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Admin-soft delete user:
-  async softDeleteUser(req, res) {
-    try {
-      const { id } = req.params;
+  // async softDeleteUser(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const user = await UserModel.findOne({
-        _id: id,
-        isDeleted: false,
-      });
+  //     const user = await UserModel.findOne({
+  //       _id: id,
+  //       isDeleted: false,
+  //     });
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+  //     if (!user) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "User not found",
+  //       });
+  //     }
 
-      await UserModel.findByIdAndUpdate(
-        id,
-        {
-          isDeleted: true,
-          deletedAt: new Date(),
-          deletedBy: req.user._id,
-        },
-        {
-          new: true,
-          runValidators: true,
-        },
-      );
+  //     await UserModel.findByIdAndUpdate(
+  //       id,
+  //       {
+  //         isDeleted: true,
+  //         deletedAt: new Date(),
+  //         deletedBy: req.user._id,
+  //       },
+  //       {
+  //         new: true,
+  //         runValidators: true,
+  //       },
+  //     );
 
-      return res.status(200).json({
-        success: true,
-        message: "User soft deleted successfully",
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "User soft deleted successfully",
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to soft delete user",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to soft delete user",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // ========================== AGENTS ========================================
 
@@ -1277,122 +1277,122 @@ class AuthController {
   }
 
   // Update Agent:
-  async updateAgent(req, res) {
-    try {
-      const { id } = req.params;
+  // async updateAgent(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const agent = await Agent.findOne({
-        _id: id,
-        role: "agent",
-        isDeleted: false,
-      });
+  //     const agent = await Agent.findOne({
+  //       _id: id,
+  //       role: "agent",
+  //       isDeleted: false,
+  //     });
 
-      if (!agent) {
-        return res.status(404).json({
-          success: false,
-          message: "Agent not found",
-        });
-      }
+  //     if (!agent) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Agent not found",
+  //       });
+  //     }
 
-      const { name, email, phone, image } = req.body;
+  //     const { name, email, phone, image } = req.body;
 
-      if (email && email !== agent.email) {
-        const existingAgent = await Agent.findOne({
-          email,
-          _id: { $ne: id },
-          isDeleted: false,
-        });
+  //     if (email && email !== agent.email) {
+  //       const existingAgent = await Agent.findOne({
+  //         email,
+  //         _id: { $ne: id },
+  //         isDeleted: false,
+  //       });
 
-        if (existingAgent) {
-          return res.status(409).json({
-            success: false,
-            message: "Email already exists",
-          });
-        }
-      }
+  //       if (existingAgent) {
+  //         return res.status(409).json({
+  //           success: false,
+  //           message: "Email already exists",
+  //         });
+  //       }
+  //     }
 
-      const updatedAgent = await Agent.findByIdAndUpdate(
-        id,
-        {
-          ...(name !== undefined && { name }),
-          ...(email !== undefined && { email }),
-          ...(phone !== undefined && { phone }),
-          ...(image !== undefined && { image }),
-        },
-        {
-          new: true,
-          runValidators: true,
-        },
-      ).select("-password -loginSecret -refreshTokenHash");
+  //     const updatedAgent = await Agent.findByIdAndUpdate(
+  //       id,
+  //       {
+  //         ...(name !== undefined && { name }),
+  //         ...(email !== undefined && { email }),
+  //         ...(phone !== undefined && { phone }),
+  //         ...(image !== undefined && { image }),
+  //       },
+  //       {
+  //         new: true,
+  //         runValidators: true,
+  //       },
+  //     ).select("-password -loginSecret -refreshTokenHash");
 
-      return res.status(200).json({
-        success: true,
-        message: "Agent updated successfully",
-        agent: updatedAgent,
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Agent updated successfully",
+  //       agent: updatedAgent,
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update agent",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to update agent",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Update agent role:
-  async updateAgentRole(req, res) {
-    try {
-      const { id } = req.params;
-      const { role } = req.body;
+  // async updateAgentRole(req, res) {
+  //   try {
+  //     const { id } = req.params;
+  //     const { role } = req.body;
 
-      const allowedRoles = ["agent", "owner", "customer"];
+  //     const allowedRoles = ["agent", "owner", "customer"];
 
-      if (!allowedRoles.includes(role)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid role",
-        });
-      }
+  //     if (!allowedRoles.includes(role)) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "Invalid role",
+  //       });
+  //     }
 
-      const agent = await Agent.findOne({
-        _id: id,
-        role: "agent",
-        isDeleted: false,
-      });
+  //     const agent = await Agent.findOne({
+  //       _id: id,
+  //       role: "agent",
+  //       isDeleted: false,
+  //     });
 
-      if (!agent) {
-        return res.status(404).json({
-          success: false,
-          message: "Agent not found",
-        });
-      }
+  //     if (!agent) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Agent not found",
+  //       });
+  //     }
 
-      agent.role = role;
+  //     agent.role = role;
 
-      // Invalidate current sessions after role change
-      agent.loginSecret = undefined;
-      agent.refreshTokenHash = undefined;
-      agent.refreshTokenExpires = undefined;
+  //     // Invalidate current sessions after role change
+  //     agent.loginSecret = undefined;
+  //     agent.refreshTokenHash = undefined;
+  //     agent.refreshTokenExpires = undefined;
 
-      await agent.save();
+  //     await agent.save();
 
-      return res.status(200).json({
-        success: true,
-        message: "Agent role updated successfully",
-        role: agent.role,
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Agent role updated successfully",
+  //       role: agent.role,
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update agent role",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to update agent role",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Update agent status:
   async updateAgentStatus(req, res) {
@@ -1452,85 +1452,85 @@ class AuthController {
   }
 
   // Delete Agent:
-  async deleteAgent(req, res) {
-    try {
-      const { id } = req.params;
+  // async deleteAgent(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const agent = await Agent.findOne({
-        _id: id,
-        role: "agent",
-        isDeleted: false,
-      });
+  //     const agent = await Agent.findOne({
+  //       _id: id,
+  //       role: "agent",
+  //       isDeleted: false,
+  //     });
 
-      if (!agent) {
-        return res.status(404).json({
-          success: false,
-          message: "Agent not found",
-        });
-      }
+  //     if (!agent) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Agent not found",
+  //       });
+  //     }
 
-      await Agent.findByIdAndDelete(id);
+  //     await Agent.findByIdAndDelete(id);
 
-      return res.status(200).json({
-        success: true,
-        message: "Agent deleted successfully",
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Agent deleted successfully",
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to delete agent",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to delete agent",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Agent soft-delete:
-  async softDeleteAgent(req, res) {
-    try {
-      const { id } = req.params;
+  // async softDeleteAgent(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const agent = await Agent.findOne({
-        _id: id,
-        role: "agent",
-        isDeleted: false,
-      });
+  //     const agent = await Agent.findOne({
+  //       _id: id,
+  //       role: "agent",
+  //       isDeleted: false,
+  //     });
 
-      if (!agent) {
-        return res.status(404).json({
-          success: false,
-          message: "Agent not found",
-        });
-      }
+  //     if (!agent) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Agent not found",
+  //       });
+  //     }
 
-      await Agent.findByIdAndUpdate(
-        id,
-        {
-          isDeleted: true,
-          deletedAt: new Date(),
-          deletedBy: req.user._id,
-        },
-        {
-          new: true,
-          runValidators: true,
-        },
-      );
+  //     await Agent.findByIdAndUpdate(
+  //       id,
+  //       {
+  //         isDeleted: true,
+  //         deletedAt: new Date(),
+  //         deletedBy: req.user._id,
+  //       },
+  //       {
+  //         new: true,
+  //         runValidators: true,
+  //       },
+  //     );
 
-      return res.status(200).json({
-        success: true,
-        message: "Agent soft deleted successfully",
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Agent soft deleted successfully",
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to soft delete agent",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to soft delete agent",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // =========================== OWNERS ======================================
 
@@ -1750,57 +1750,57 @@ class AuthController {
   }
 
   // Update owner role:
-  async updateOwnerRole(req, res) {
-    try {
-      const { id } = req.params;
-      const { role } = req.body;
+  // async updateOwnerRole(req, res) {
+  //   try {
+  //     const { id } = req.params;
+  //     const { role } = req.body;
 
-      const allowedRoles = ["owner", "agent", "customer"];
+  //     const allowedRoles = ["owner", "agent", "customer"];
 
-      if (!allowedRoles.includes(role)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid role",
-        });
-      }
+  //     if (!allowedRoles.includes(role)) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: "Invalid role",
+  //       });
+  //     }
 
-      const owner = await Owner.findOne({
-        _id: id,
-        role: "owner",
-        isDeleted: false,
-      });
+  //     const owner = await Owner.findOne({
+  //       _id: id,
+  //       role: "owner",
+  //       isDeleted: false,
+  //     });
 
-      if (!owner) {
-        return res.status(404).json({
-          success: false,
-          message: "Owner not found",
-        });
-      }
+  //     if (!owner) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Owner not found",
+  //       });
+  //     }
 
-      owner.role = role;
+  //     owner.role = role;
 
-      // Invalidate current sessions
-      owner.loginSecret = undefined;
-      owner.refreshTokenHash = undefined;
-      owner.refreshTokenExpires = undefined;
+  //     // Invalidate current sessions
+  //     owner.loginSecret = undefined;
+  //     owner.refreshTokenHash = undefined;
+  //     owner.refreshTokenExpires = undefined;
 
-      await owner.save();
+  //     await owner.save();
 
-      return res.status(200).json({
-        success: true,
-        message: "Owner role updated successfully",
-        role: owner.role,
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Owner role updated successfully",
+  //       role: owner.role,
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update owner role",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to update owner role",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Update owner status:
   async updateOwnerStatus(req, res) {
@@ -1857,87 +1857,87 @@ class AuthController {
   }
 
   // Delete owner:
-  async deleteOwner(req, res) {
-    try {
-      const { id } = req.params;
+  // async deleteOwner(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const owner = await Owner.findOne({
-        _id: id,
-        role: "owner",
-        isDeleted: false,
-      });
+  //     const owner = await Owner.findOne({
+  //       _id: id,
+  //       role: "owner",
+  //       isDeleted: false,
+  //     });
 
-      if (!owner) {
-        return res.status(404).json({
-          success: false,
-          message: "Owner not found",
-        });
-      }
+  //     if (!owner) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Owner not found",
+  //       });
+  //     }
 
-      await Owner.findByIdAndDelete(id);
+  //     await Owner.findByIdAndDelete(id);
 
-      return res.status(200).json({
-        success: true,
-        message: "Owner deleted successfully",
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Owner deleted successfully",
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to delete owner",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to delete owner",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
   // Soft-delete owner:
-  async softDeleteOwner(req, res) {
-    try {
-      const { id } = req.params;
+  // async softDeleteOwner(req, res) {
+  //   try {
+  //     const { id } = req.params;
 
-      const owner = await Owner.findOne({
-        _id: id,
-        role: "owner",
-        isDeleted: false,
-      });
+  //     const owner = await Owner.findOne({
+  //       _id: id,
+  //       role: "owner",
+  //       isDeleted: false,
+  //     });
 
-      if (!owner) {
-        return res.status(404).json({
-          success: false,
-          message: "Owner not found",
-        });
-      }
+  //     if (!owner) {
+  //       return res.status(404).json({
+  //         success: false,
+  //         message: "Owner not found",
+  //       });
+  //     }
 
-      await Owner.findByIdAndUpdate(
-        id,
-        {
-          isDeleted: true,
-          deletedAt: new Date(),
-          deletedBy: req.user._id,
-        },
-        {
-          new: true,
-          runValidators: true,
-        },
-      );
+  //     await Owner.findByIdAndUpdate(
+  //       id,
+  //       {
+  //         isDeleted: true,
+  //         deletedAt: new Date(),
+  //         deletedBy: req.user._id,
+  //       },
+  //       {
+  //         new: true,
+  //         runValidators: true,
+  //       },
+  //     );
 
-      return res.status(200).json({
-        success: true,
-        message: "Owner soft deleted successfully",
-      });
-    } catch (error) {
-      console.error(error);
+  //     return res.status(200).json({
+  //       success: true,
+  //       message: "Owner soft deleted successfully",
+  //     });
+  //   } catch (error) {
+  //     console.error(error);
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to soft delete owner",
-        error: error.message,
-      });
-    }
-  }
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Failed to soft delete owner",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
 
-  // =========================== PROPERTY =====================================
+  // =============================== PROPERTY =====================================
 
   // Admin get all the properties:
   async getAllProperties(req, res) {
@@ -2293,6 +2293,8 @@ class AuthController {
     }
   }
 
+  // ============================ APPOINTMENTS ===============================
+
   // Admin- get all appointments:
   async getAllAppointments(req, res) {
     try {
@@ -2380,6 +2382,8 @@ class AuthController {
       });
     }
   }
+
+  // ============================ REPORTS ====================================
 
   // Admin - view reports:
   async getReports(req, res) {
@@ -2490,6 +2494,8 @@ class AuthController {
       });
     }
   }
+
+  // ============================ ANALYTICTS =================================
 
   // Admin-view analytics:
   async getAnalytics(req, res) {
