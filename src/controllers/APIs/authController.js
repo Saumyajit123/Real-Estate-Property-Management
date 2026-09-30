@@ -185,9 +185,9 @@ class AuthController {
         });
       }
 
-      const otp = generateOTP();
+      const otpdata = generateOTP();
 
-      user.emailOtp = otp;
+      user.emailOtp = otpdata.otp;
       user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
       await user.save();
@@ -200,7 +200,7 @@ class AuthController {
 
         <p>Your new verification OTP is:</p>
 
-        <h1>${otp}</h1>
+        <h1>${otpdata.otp}</h1>
 
         <p>This OTP will expire in 10 minutes.</p>
       `,

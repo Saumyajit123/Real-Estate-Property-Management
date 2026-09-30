@@ -10,7 +10,7 @@ const favouriteSchema = new mongoose.Schema(
 
     property: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Property",
+      ref: "property",
       required: true,
     },
   },
@@ -20,7 +20,6 @@ const favouriteSchema = new mongoose.Schema(
   },
 );
 
-// Prevent duplicate favourites
 favouriteSchema.index(
   {
     user: 1,

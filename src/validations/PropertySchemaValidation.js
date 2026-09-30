@@ -21,7 +21,7 @@ class PropertySchemaValidation {
         "Land",
         "Office",
         "Shop",
-        "Warehouse"
+        "Warehouse",
       )
       .required()
       .messages({
@@ -31,15 +31,11 @@ class PropertySchemaValidation {
           "Property Type must be Apartment, House, Villa, Land, Office, Shop or Warehouse",
       }),
 
-    purpose: joi
-      .string()
-      .valid("Sale", "Rent")
-      .required()
-      .messages({
-        "string.empty": "Purpose is required",
-        "any.required": "Purpose is required",
-        "any.only": "Purpose must be Sale or Rent",
-      }),
+    purpose: joi.string().valid("Sale", "Rent").required().messages({
+      "string.empty": "Purpose is required",
+      "any.required": "Purpose is required",
+      "any.only": "Purpose must be Sale or Rent",
+    }),
 
     price: joi.number().positive().required().messages({
       "number.base": "Price must be a number",
@@ -78,26 +74,9 @@ class PropertySchemaValidation {
           "Furnishing Status must be Furnished, Semi-Furnished or Unfurnished",
       }),
 
-    images: joi
-      .object({
-        image: joi.string().trim().required().messages({
-          "string.empty": "Image is required",
-          "any.required": "Image is required",
-        }),
-
-        public_id: joi.string().trim().required().messages({
-          "string.empty": "Public_Id is required",
-          "any.required": "Public_Id is required",
-        }),
-      })
-      .required()
-      .messages({
-        "any.required": "Images are required",
-      }),
-
-    isDeleted: joi.boolean().optional().default(false),
-
-    amenities: joi.array().items(joi.string().trim()).optional(),
+    isDeleted: joi.boolean().optional().default(false).messages({
+      "boolean.base": "isDeleted must be true or false",
+    }),
 
     status: joi
       .string()
@@ -106,8 +85,7 @@ class PropertySchemaValidation {
       .messages({
         "string.empty": "Status is required",
         "any.required": "Status is required",
-        "any.only":
-          "Status must be Available, Sold, Rented or Unavailable",
+        "any.only": "Status must be Available, Sold, Rented or Unavailable",
       }),
 
     approvalStatus: joi
@@ -116,8 +94,7 @@ class PropertySchemaValidation {
       .optional()
       .default("Pending")
       .messages({
-        "any.only":
-          "Approval Status must be Pending, Approved or rejected",
+        "any.only": "Approval Status must be Pending, Approved or rejected",
       }),
 
     location: joi

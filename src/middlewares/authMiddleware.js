@@ -4,26 +4,26 @@ const User = require("../models/userModel");
 
 const authMiddleware = async (req, res, next) => {
   try {
-    let token;
+    const AuthHeader = req.headers.authorization;
+        if (!AuthHeader) {
+      if (req.method === "GET") {
+        return next();
+      }
 
-    if (req.cookies && req.cookies.accessToken) {
-      token = req.cookies.accessToken;
-    }
-
-    if (
-      !token &&
-      req.headers.authorization &&
-      req.headers.authorization.startsWith("Bearer")
-    ) {
-      token = req.headers.authorization.split(" ")[1];
-    }
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required",
+      return res.status(statuscode.NOT_FOUND).json({
+        status: false,
+        message: "Authorrization token is required",
       });
     }
+
+    if(!AuthHeader.startsWith("Bearer ")){
+        return res.status(statuscode.NOT_FOUND).json({
+        status: false,
+        message: "Invalid authorization format"
+      });
+    }
+
+    const token = AuthHeader.split(" ")[1];
 
     const decodedToken = jwt.decode(token);
 
@@ -54,8 +54,6 @@ const authMiddleware = async (req, res, next) => {
         message: "Your account is inactive",
       });
     }
-
-    //verify login secret:
     const verifiedToken = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
     if (verifiedToken.type !== "access") {
@@ -79,7 +77,7 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-// Role authorization:
+
 const authorizeRoles = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {

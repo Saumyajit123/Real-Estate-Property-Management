@@ -46,17 +46,17 @@ const PropertySchema = new Schema({
         required:[true,"Furnishing Status is required"],
         trim:true
     },
-    // owner:{
-    //     type:mongoose.Schema.Types.ObjectId,
-    //     ref:"user",
-    //     required:[true,"Owner is required"]
-    // },
-    // agent:{
-    //     type:mongoose.Schema.Types.ObjectId,
-    //     ref:"user",
-    //     required:[true,"Agent is required"],
+    owner:{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"User",
+        required:[true,"Owner is required"]
+    },
+    agent:{
+        type:mongoose.Schema.Types.ObjectId,
+        ref:"User",
+        required:[true,"Agent is required"],
 
-    // }
+    },
 
     images:[{
         image:{
