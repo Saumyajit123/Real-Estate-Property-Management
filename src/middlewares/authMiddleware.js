@@ -1,9 +1,9 @@
 const jwt = require("jsonwebtoken");
-
 const User = require("../models/userModel");
 
 const authMiddleware = async (req, res, next) => {
   try {
+
     const AuthHeader = req.headers.authorization;
         if (!AuthHeader) {
       if (req.method === "GET") {
@@ -25,20 +25,31 @@ const authMiddleware = async (req, res, next) => {
 
     const token = AuthHeader.split(" ")[1];
 
-    const decodedToken = jwt.decode(token);
 
-    if (!decodedToken?.userId) {
+
+    if (!token) {
       return res.status(401).json({
         success: false,
-        message: "Invalid token",
+        message: "Access token required",
       });
     }
 
+    // Decode token only to get user ID
+    const decodedToken = jwt.decode(token);
+
+    if (!decodedToken || !decodedToken.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid access token",
+      });
+    }
+
+    // Find user and retrieve dynamic loginSecret
     const user = await User.findOne({
-      _id: decodedToken.userId,
+      _id: decodedToken.id,
       isDeleted: false,
     }).select(
-      "_id name email phone role avatar status isEmailVerified +loginSecret",
+      "_id name email phone role image status isEmailVerified +loginSecret",
     );
 
     if (!user) {
@@ -48,14 +59,29 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
+    // Check account status
     if (user.status !== "active") {
       return res.status(403).json({
         success: false,
         message: "Your account is inactive",
       });
     }
+
     const verifiedToken = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
+
+    // Make sure dynamic secret exists
+    if (!user.loginSecret) {
+      return res.status(401).json({
+        success: false,
+        message: "Login session is invalid. Please login again",
+      });
+    }
+
+
+    // Verify JWT using user's dynamic secret
+
+    // Make sure this is an access token
     if (verifiedToken.type !== "access") {
       return res.status(401).json({
         success: false,
@@ -63,16 +89,30 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
+    // Store authenticated user
     req.user = user;
 
     next();
   } catch (error) {
-    return res.status(401).json({
+    console.log(error);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        message: "Access token expired",
+      });
+    }
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid access token",
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message:
-        error.name === "TokenExpiredError"
-          ? "Access token expired"
-          : "Invalid access token",
+      message: "Authentication failed",
     });
   }
 };
@@ -91,4 +131,7 @@ const authorizeRoles = (...roles) => {
   };
 };
 
-module.exports = { authMiddleware, authorizeRoles };
+module.exports = {
+  authMiddleware,
+  authorizeRoles,
+};

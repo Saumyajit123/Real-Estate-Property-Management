@@ -5,25 +5,9 @@ const Joi = require("joi");
 // ==========================================================
 
 const createLeaseSchema = Joi.object({
-  property: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required(),
-
-  tenant: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required(),
-
-  owner: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required(),
-
-  agent: Joi.string()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .optional(),
-
   rentalApplication: Joi.string()
     .pattern(/^[0-9a-fA-F]{24}$/)
-    .optional(),
+    .required(),
 
   startDate: Joi.date().iso().required(),
 
@@ -31,11 +15,9 @@ const createLeaseSchema = Joi.object({
 
   monthlyRent: Joi.number().positive().required(),
 
-  securityDeposit: Joi.number().min(0).optional(),
+  securityDeposit: Joi.number().min(0).default(0),
 
-  status: Joi.string()
-    .valid("active", "expired", "terminated")
-    .default("active"),
+  agreementDocument: Joi.string().trim().allow("").optional(),
 });
 
 // ==========================================================
@@ -55,7 +37,7 @@ const updateLeaseSchema = Joi.object({
 
   securityDeposit: Joi.number().min(0).optional(),
 
-  status: Joi.string().valid("active", "expired", "terminated").optional(),
+  agreementDocument: Joi.string().trim().allow("").optional(),
 });
 
 // ==========================================================
@@ -68,6 +50,16 @@ const terminateLeaseSchema = Joi.object({
     .required(),
 
   terminationReason: Joi.string().trim().max(1000).required(),
+});
+
+// ==========================================================
+// EXPIRE LEASE
+// ==========================================================
+
+const expireLeaseSchema = Joi.object({
+  id: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required(),
 });
 
 // ==========================================================
@@ -84,5 +76,6 @@ module.exports = {
   createLeaseSchema,
   updateLeaseSchema,
   terminateLeaseSchema,
+  expireLeaseSchema,
   leaseIdSchema,
 };

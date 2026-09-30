@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const userSchema = new mongoose.Schema(
+const ownerSchema = new mongoose.Schema(
   {
     name: {
       type: String,
@@ -11,8 +11,6 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
-      lowercase: true,
       trim: true,
     },
 
@@ -39,8 +37,8 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["admin", "agent", "owner", "customer"],
-      default: "customer",
+      enum: ["owner"],
+      default: "owner",
     },
 
     status: {
@@ -98,12 +96,12 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
   },
-
   {
     timestamps: true,
+    collection: "users",
   },
 );
 
-const UserModel = mongoose.model("User", userSchema);
+const OwnerModel = mongoose.model("Owner", ownerSchema);
 
-module.exports = UserModel;
+module.exports = OwnerModel;

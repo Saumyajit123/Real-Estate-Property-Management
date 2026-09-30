@@ -53,8 +53,14 @@ const leaseSchema = new mongoose.Schema(
     },
 
     agreementDocument: {
-      type: String,
-      default: "",
+      url: {
+        type: String,
+        default: "",
+      },
+      public_id: {
+        type: String,
+        default: "",
+      },
     },
 
     status: {
