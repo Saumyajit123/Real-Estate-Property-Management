@@ -22,6 +22,7 @@ const registerSchema = Joi.object({
 
 const verifyEmailOTPSchema = Joi.object({
   email: Joi.string().email().lowercase().trim().required(),
+  
 
   otp: Joi.string()
     .length(6)
@@ -96,26 +97,15 @@ const forgotPasswordSchema = Joi.object({
 // ==========================================================
 
 const resetPasswordSchema = Joi.object({
-  email: Joi.string().trim().email().required().messages({
-    "string.email": "Please provide a valid email address",
-    "string.empty": "Email is required",
-    "any.required": "Email is required",
-  }),
 
-  otp: Joi.string().trim().length(6).required().messages({
-    "string.length": "OTP must be 6 digits",
-    "string.empty": "OTP is required",
-    "any.required": "OTP is required",
-  }),
-
-  newPassword: Joi.string().trim().min(6).max(15).required().messages({
+  password: Joi.string().trim().min(6).max(15).required().messages({
     "string.empty": "Password is required",
     "string.min": "Password must be at least 6 characters",
     "string.max": "Password cannot exceed 10 characters",
     "any.required": "Password is required",
   }),
   
-  confirmPassword: Joi.string().trim().required().valid(Joi.ref("newPassword")).messages({
+  confirm_password: Joi.string().trim().required().valid(Joi.ref("password")).messages({
       "string.empty": "Confirm password is required",
       "any.only": "Confirm password must match new password",
       "any.required": "Confirm password is required",

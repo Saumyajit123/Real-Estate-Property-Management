@@ -18,25 +18,8 @@ const {
   changePasswordSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
-  updateUserSchema,
-  updateUserRoleSchema,
-  updateUserStatusSchema,
-  userIdSchema,
+  
 } = require("../../validations/userSchema");
-
-const {
-  updateAgentSchema,
-  updateAgentRoleSchema,
-  updateAgentStatusSchema,
-  agentIdSchema,
-  getAllAgentsSchema,
-} = require("../../validations/agentSchema");
-
-const {updateOwnerSchema,
-  updateOwnerRoleSchema,
-  updateOwnerStatusSchema,
-  ownerIdSchema,
-  getAllOwnersSchema,} = require("../../validations/ownerSchema");
 
 const {
   createCategorySchema,
@@ -44,10 +27,11 @@ const {
   updateCategorySchema,
   categoryIdSchema,
 } = require("../../validations/categorySchema");
+const upload = require('../../utils/multer')
 
 
 
-router.post("/register", Validation.validate(registerSchema), authController.register);
+router.post("/register",upload.single('image'), Validation.validate(registerSchema), authController.register);
 
 router.post(
   "/verify-email",
@@ -62,6 +46,7 @@ router.post(
 );
 
 router.post("/login", Validation.validate(loginSchema), authController.login);
+router.get("/logout",authMiddleware,authController.logout);
 
 router.post(
   "/change-password",
@@ -73,58 +58,36 @@ router.post(
 router.post(
   "/forgot-password",
   Validation.validate(forgotPasswordSchema),
-  authController.forgotPassword,
+  authController.resetPasswordLink,
 );
 
-router.all(
-  "/reset-password",
+router.post(
+  "/reset-password/:id/:token",
   Validation.validate(resetPasswordSchema),
   authController.resetPassword,
 );
 
 router.get("/getprofile",authMiddleware,authController.getProfile)
 
-router.all(
+router.put(
   "/profile/update",
   authMiddleware,
-  uploadMiddleware.single("avatar"),
+  upload.single('image'),
   Validation.validate(updateProfileSchema),
-  authController.updateProfile,
+  authController.updateprofile,
 );
 
 // ========================== USERS =======================================
 
-// router.all(
-//   "/admin/users/:id/update",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(updateUserSchema),
-//   authController.updateUser,
-// );
 
-// router.all(
-//   "/admin/users/:id/role",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(updateUserRoleSchema),
-//   authController.updateUserRole,
-// );
-
-router.all(
-  "/admin/users/:id/status",
+router.patch(
+  "/admin/users/status/:id",
   authMiddleware,
   authorizeRoles("admin"),
-  Validation.validate(updateUserStatusSchema),
   authController.updateUserStatus,
 );
 
-// router.all(
-//   "/admin/users/:id/delete",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(userIdSchema),
-//   authController.softDeleteUser,
-// );
+
 
 router.all(
   "/admin/users",
@@ -139,6 +102,13 @@ router.all(
   authMiddleware,
   authorizeRoles("admin"),
   authController.getUserById,
+);
+
+router.all(
+  "/admin/user/delete/:id",
+  authMiddleware,
+  authorizeRoles("admin"),
+  authController.deleteUser,
 );
 
 // ==================================== CATEGORY ========================================
@@ -178,116 +148,12 @@ router.all(
 
 //====================================== AGENTS ===================================
 
-router.all(
-  "/admin/agents/allagents",
-  authMiddleware,
-  authorizeRoles("admin"),
-  authController.getAllAgents,
-);
 
-router.all(
-  "/admin/agents/:id",
-  authMiddleware,
-  authorizeRoles("admin"),
-  authController.getAgentById,
-);
-
-// router.all(
-//   "/admin/agents/update/:id",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(updateAgentSchema),
-//   authController.updateAgent,
-// );
-
-// router.all(
-//   "/admin/agents/update/:id/role",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(updateAgentRoleSchema),
-//   authController.updateAgentRole,
-// );
-
-router.all(
-  "/admin/agents/update/:id/status",
-  authMiddleware,
-  authorizeRoles("admin"),
-  Validation.validate(updateAgentStatusSchema),
-  authController.updateAgentStatus,
-);
-
-// router.all(
-//   "/admin/agents/delete/:id",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(agentIdSchema),
-//   authController.deleteAgent,
-// );
-
-// router.all(
-//   "/admin/agents/soft-delete/:id",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(agentIdSchema),
-//   authController.softDeleteAgent,
-// );
 
 
 // ===================================== OWNER ==============================================
 
-router.all(
-  "/admin/owners/allowners",
-  authMiddleware,
-  authorizeRoles("admin"),
-  authController.getAllOwners,
-);
 
-router.all(
-  "/admin/owners/:id",
-  authMiddleware,
-  authorizeRoles("admin"),
-  authController.getOwnerById,
-);
-
-// router.all(
-//   "/admin/owners/update/:id",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(updateOwnerSchema),
-//   authController.updateOwner,
-// );
-
-// router.all(
-//   "/admin/owners/update/:id/role",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(updateOwnerRoleSchema),
-//   authController.updateOwnerRole,
-// );
-
-router.all(
-  "/admin/owners/update/:id/status",
-  authMiddleware,
-  authorizeRoles("admin"),
-  Validation.validate(updateOwnerStatusSchema),
-  authController.updateOwnerStatus,
-);
-
-// router.all(
-//   "/admin/owners/delete/:id",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(ownerIdSchema),
-//   authController.deleteOwner,
-// );
-
-// router.all(
-//   "/admin/owners/soft-delete/:id",
-//   authMiddleware,
-//   authorizeRoles("admin"),
-//   Validation.validate(ownerIdSchema),
-//   authController.softDeleteOwner,
-// );
 
 
 // ========================================= PROPERTIES ==========================================

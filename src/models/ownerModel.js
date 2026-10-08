@@ -11,11 +11,14 @@ const ownerSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
+      unique: true,
+      lowercase: true,
       trim: true,
     },
 
     phone: {
       type: String,
+      required: true,
       trim: true,
     },
 
@@ -25,20 +28,41 @@ const ownerSchema = new mongoose.Schema(
     },
 
     image: {
-      url: {
+      type: String,
+      default: null,
+    },
+    public_id:{
+      type:String,
+      trim:true
+    },
+
+    address: {
+      street: {
         type: String,
-        default: "",
+        trim: true,
       },
-      public_id: {
+      city: {
         type: String,
-        default: "",
+        trim: true,
+      },
+      state: {
+        type: String,
+        trim: true,
+      },
+      country: {
+        type: String,
+        default: "India",
+      },
+      pincode: {
+        type: String,
+        trim: true,
       },
     },
 
     role: {
       type: String,
-      enum: ["owner"],
       default: "owner",
+      enum: ["owner"],
     },
 
     status: {
@@ -46,62 +70,18 @@ const ownerSchema = new mongoose.Schema(
       enum: ["active", "inactive", "blocked"],
       default: "active",
     },
-
+    isDeleted:{
+      type:Boolean,
+      default:false
+    },
     isEmailVerified: {
       type: Boolean,
       default: false,
     },
-
-    emailOtp: {
-      type: String,
-    },
-
-    emailOtpExpires: {
-      type: Date,
-    },
-
-    resetOtp: {
-      type: String,
-    },
-
-    resetOtpExpires: {
-      type: Date,
-    },
-
-    loginSecret: {
-      type: String,
-    },
-
-    refreshTokenHash: {
-      type: String,
-    },
-
-    refreshTokenExpires: {
-      type: Date,
-    },
-
-    isDeleted: {
-      type: Boolean,
-      default: false,
-    },
-
-    deletedAt: {
-      type: Date,
-      default: null,
-    },
-
-    deletedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
   },
   {
     timestamps: true,
-    collection: "users",
-  },
+  }
 );
 
-const OwnerModel = mongoose.model("Owner", ownerSchema);
-
-module.exports = OwnerModel;
+module.exports = mongoose.model("Owner", ownerSchema);

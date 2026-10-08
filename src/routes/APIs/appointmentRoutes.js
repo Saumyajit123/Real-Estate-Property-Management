@@ -9,7 +9,6 @@ const {
 const Validation = require("../../validations/validation");
 const {
   createAppointmentSchema,
-  updateAppointmentSchema,
   cancelAppointmentSchema,
   appointmentIdSchema,
   appointmentActionSchema,
@@ -45,26 +44,42 @@ router.get(
 );
 
 router.get(
-  "/appointment/single",
+  "/appointment/single/:id",
   authMiddleware,
   Validation.validate(appointmentIdSchema),
   appointmentController.getAppointmentById,
 );
 
-router.all(
+router.put(
   "/appointment/action",
+
+  (req, res, next) => {
+    console.log("🔥 ROUTE HIT:", req.method, req.originalUrl);
+    console.log("   Headers:", req.headers["content-type"]);
+    console.log("   Body (before parsing):", req.body);
+    next();
+  },
+
+
   authMiddleware,
   authorizeRoles("agent", "owner"),
   Validation.validate(appointmentActionSchema),
   appointmentController.appointmentAction,
 );
 
-router.all(
+router.delete(
   "/appointemnt/cancel",
   authMiddleware,
   authorizeRoles("customer", "agent", "owner"),
   Validation.validate(cancelAppointmentSchema),
   appointmentController.cancelAppointment,
+);
+
+router.get(
+  "/appointment/all",
+  authMiddleware,
+  authorizeRoles("admin"),
+  appointmentController.getAllAppointments
 );
 
 

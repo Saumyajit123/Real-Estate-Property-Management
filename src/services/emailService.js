@@ -1,4 +1,4 @@
-const sendMail = require("../config/sendMail");
+const sendMail = require("../config/email.config");
 
 const sendVerificationEmail = async (email, otp) => {
   return sendMail({

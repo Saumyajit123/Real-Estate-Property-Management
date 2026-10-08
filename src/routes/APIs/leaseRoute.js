@@ -16,7 +16,7 @@ const {
 router.post(
   "/lease/create",
   authMiddleware,
-  authorizeRoles("owner", "admin"),
+  authorizeRoles("owner", "agent"),
   Validation.validate(createLeaseSchema),
   leaseController.createLease,
 );
@@ -52,7 +52,7 @@ router.get(
 router.put(
   "/lease/update",
   authMiddleware,
-  authorizeRoles("owner", "admin"),
+  authorizeRoles("owner", "agent"),
   Validation.validate(updateLeaseSchema),
   leaseController.updateLease,
 );
@@ -60,7 +60,7 @@ router.put(
 router.put(
   "/lease/terminate",
   authMiddleware,
-  authorizeRoles("owner", "admin"),
+  authorizeRoles("owner", "agent"),
   Validation.validate(terminateLeaseSchema),
   leaseController.terminateLease,
 );
@@ -68,7 +68,7 @@ router.put(
 router.put(
   "/lease/expire",
   authMiddleware,
-  authorizeRoles("admin"),
+  authorizeRoles("owner","agent"),
   Validation.validate(expireLeaseSchema),
   leaseController.expireLease,
 );
@@ -80,6 +80,7 @@ router.get(
   leaseController.getLeaseById,
 );
 
+router.delete("/lease/:id",authMiddleware,leaseController.deleteLease)
 
 
 module.exports = router;

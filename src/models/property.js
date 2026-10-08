@@ -57,22 +57,13 @@ const PropertySchema = new Schema(
     },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Owner",
       required: [true, "Owner is required"],
     },
 
-    owner:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"User",
-        required:[true,"Owner is required"]
-    },
-    agent:{
-        type:mongoose.Schema.Types.ObjectId,
-        ref:"User",
-        required:[true,"Agent is required"],
-
-    
-
+    agentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Agent",
     },
 
     images: [
@@ -93,11 +84,10 @@ const PropertySchema = new Schema(
       type: Boolean,
       default: false,
     },
-    amenities: [
-      {
-        type: String,
-      },
-    ],
+    amenities: {
+      type: [String],
+      default: [],
+    },
     status: {
       type: String,
       enum: ["Available", "Sold", "Rented", "Unavailable"],
@@ -120,6 +110,24 @@ const PropertySchema = new Schema(
         type: [Number],
         required: [true, "coordinates is required"],
       },
+    },
+
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
+    approvalNote: {
+      type: String,
+      default: null,
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
     },
   },
   {

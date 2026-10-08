@@ -4,7 +4,7 @@ const appointmentSchema = new mongoose.Schema(
   {
     property: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Property",
+      ref: "property",
       required: true,
     },
 
@@ -16,7 +16,7 @@ const appointmentSchema = new mongoose.Schema(
 
     agent: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Agent",
       default: null,
     },
 

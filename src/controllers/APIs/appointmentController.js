@@ -1,6 +1,33 @@
 const Appointment = require("../../models/appointmentModel");
 const Property = require("../../models/property");
 
+const checkAppointmentAccess = async (appointment, user) => {
+  // Agent
+  if (user.role === "agent") {
+    return (
+      appointment.agent && appointment.agent.toString() === user._id.toString()
+    );
+  }
+
+  // Owner
+  if (user.role === "owner") {
+    const property = await Property.findOne({
+      _id: appointment.property,
+      owner: user._id,
+      isDeleted: false,
+    }).select("_id");
+
+    return !!property;
+  }
+
+  // Admin
+  if (user.role === "admin") {
+    return true;
+  }
+
+  return false;
+};
+
 class AppointmentController {
   // Customer - create appointment:
   async createAppointment(req, res) {
@@ -19,7 +46,7 @@ class AppointmentController {
         });
       }
 
-      if (propertyData.status !== "approved") {
+      if (propertyData.approvalStatus !== "Approved") {
         return res.status(400).json({
           success: false,
           message: "Appointment cannot be created for this property",
@@ -44,7 +71,7 @@ class AppointmentController {
       const appointment = await Appointment.create({
         property,
         user: req.user._id,
-        agent: propertyData.agent || null,
+        agent: propertyData.agentId || null,
         appointmentDate,
         duration: duration || 60,
         message: message || "",
@@ -72,7 +99,13 @@ class AppointmentController {
     try {
       const appointments = await Appointment.find({
         user: req.user._id,
-      }).sort({ appointmentDate: 1 });
+      })
+        .sort({ appointmentDate: 1 })
+        .populate({
+          path: "property",
+          select:
+            "title description propertyType purpose price area bedrooms bathrooms furnishingStatus images status approvalStatus location amenities",
+        });
 
       return res.status(200).json({
         success: true,
@@ -93,7 +126,7 @@ class AppointmentController {
   // Customer - get single appointment:
   async getAppointmentById(req, res) {
     try {
-      const { id } = req.body;
+      const { id } = req.params;
 
       const appointment = await Appointment.findById(id);
 
@@ -147,7 +180,13 @@ class AppointmentController {
     try {
       const appointments = await Appointment.find({
         agent: req.user._id,
-      }).sort({ appointmentDate: 1 });
+      })
+        .sort({ appointmentDate: 1 })
+        .populate({
+          path: "property",
+          select:
+            "title description propertyType purpose price area bedrooms bathrooms furnishingStatus images status approvalStatus location amenities",
+        });
 
       return res.status(200).json({
         success: true,
@@ -167,39 +206,59 @@ class AppointmentController {
 
   // Owner - get all appointments:
   async getOwnerAllAppointments(req, res) {
-    try {
-      const properties = await Property.find({
-        owner: req.user._id,
-        isDeleted: false,
-      }).select("_id");
+  try {
+    // 1. Find all owner properties with NO agent assigned
+    const properties = await Property.find({
+      owner: req.user._id,
+      isDeleted: false,
+      agentId: null,   // ✅ only properties without an agent
+    }).select("_id");
 
-      const propertyIds = properties.map((property) => property._id);
+    const propertyIds = properties.map((p) => p._id);
 
-      const appointments = await Appointment.find({
-        property: {
-          $in: propertyIds,
-        },
-      }).sort({ appointmentDate: 1 });
-
+    // 2. If the owner has no unassigned properties, return empty
+    if (propertyIds.length === 0) {
       return res.status(200).json({
         success: true,
-        count: appointments.length,
-        data: appointments,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to get owner appointments",
-        error: error.message,
+        count: 0,
+        data: [],
       });
     }
+
+    // 3. Find appointments for those properties only
+    const appointments = await Appointment.find({
+      property: { $in: propertyIds },
+    })
+      .populate({
+        path: "property",
+        select:
+          "title propertyType purpose price images location agentId",
+      })
+      .populate({
+        path: "user",
+        select: "name email phone image",
+      })
+      .sort({ appointmentDate: 1 });
+
+    return res.status(200).json({
+      success: true,
+      count: appointments.length,
+      data: appointments,
+    });
+  } catch (error) {
+    console.error("GET OWNER APPOINTMENTS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get owner appointments",
+      error: error.message,
+    });
   }
+}
 
   // Owner/Agent - confirm/reject/reschedule/complete appointment:
   async appointmentAction(req, res) {
     try {
+      console.log("BODY:", req.body);
       const { id, action, appointmentDate, duration, message } = req.body;
 
       const appointment = await Appointment.findById(id);
@@ -212,10 +271,7 @@ class AppointmentController {
       }
 
       // Check access:
-      const hasAccess = await this.checkAppointmentAccess(
-        appointment,
-        req.user,
-      );
+      const hasAccess = await checkAppointmentAccess(appointment, req.user);
 
       if (!hasAccess) {
         return res.status(403).json({
@@ -322,10 +378,7 @@ class AppointmentController {
           });
         }
       } else {
-        const hasAccess = await this.checkAppointmentAccess(
-          appointment,
-          req.user,
-        );
+        const hasAccess = await checkAppointmentAccess(appointment, req.user);
 
         if (!hasAccess) {
           return res.status(403).json({
@@ -363,29 +416,40 @@ class AppointmentController {
     }
   }
 
-  // Check access - owner/agent:
-  async checkAppointmentAccess(appointment, user) {
-    // Agent
-    if (user.role === "agent") {
-      return (
-        appointment.agent &&
-        appointment.agent.toString() === user._id.toString()
-      );
-    }
+  async getAllAppointments(req, res) {
+  try {
+    const appointments = await Appointment.find()
+      .populate({
+        path: "property",
+        select:
+          "title propertyType purpose price images location agentId owner",
+      })
+      .populate({
+        path: "user",
+        select: "name email phone image role",
+      })
+      .populate({
+        path: "agent",
+        select: "name email phone image role",
+      })
+      .sort({ appointmentDate: -1 });
 
-    // Owner
-    if (user.role === "owner") {
-      const property = await Property.findOne({
-        _id: appointment.property,
-        owner: user._id,
-        isDeleted: false,
-      }).select("_id");
-
-      return !!property;
-    }
-
-    return false;
+    return res.status(200).json({
+      success: true,
+      count: appointments.length,
+      data: appointments,
+    });
+  } catch (error) {
+    console.error("GET ALL APPOINTMENTS ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get appointments",
+      error: error.message,
+    });
   }
+}
+
+  // Check access - owner/agent:
 }
 
 module.exports = new AppointmentController();

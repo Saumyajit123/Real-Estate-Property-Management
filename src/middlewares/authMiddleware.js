@@ -1,31 +1,29 @@
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/userModel");
+const Owner = require("../models/ownerModel");
+const Agent = require("../models/agentmodel");
+// const Customer = require("../models/customerModel");
 
 const authMiddleware = async (req, res, next) => {
   try {
+    const authHeader = req.headers.authorization;
 
-    const AuthHeader = req.headers.authorization;
-        if (!AuthHeader) {
-      if (req.method === "GET") {
-        return next();
-      }
-
-      return res.status(statuscode.NOT_FOUND).json({
-        status: false,
-        message: "Authorrization token is required",
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization token is required",
       });
     }
 
-    if(!AuthHeader.startsWith("Bearer ")){
-        return res.status(statuscode.NOT_FOUND).json({
-        status: false,
-        message: "Invalid authorization format"
+    if (!authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authorization format",
       });
     }
 
-    const token = AuthHeader.split(" ")[1];
-
-
+    const token = authHeader.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({
@@ -34,24 +32,70 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // Decode token only to get user ID
-    const decodedToken = jwt.decode(token);
+    // Verify JWT
+    const decodedToken = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
-    if (!decodedToken || !decodedToken.id) {
+    if (!decodedToken || !decodedToken.userId) {
       return res.status(401).json({
         success: false,
         message: "Invalid access token",
       });
     }
 
-    // Find user and retrieve dynamic loginSecret
-    const user = await User.findOne({
-      _id: decodedToken.id,
-      isDeleted: false,
-    }).select(
-      "_id name email phone role image status isEmailVerified +loginSecret",
+    if (decodedToken.type !== "access") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid access token",
+      });
+    }
+
+    const { userId, role } = decodedToken;
+
+    console.log("DECODED TOKEN:", decodedToken);
+    console.log("USER ID:", userId);
+    console.log("ROLE:", role);
+
+    let user;
+
+    // Find user according to role
+    if (role === "admin") {
+      user = await User.findOne({
+        _id: userId,
+        isDeleted: false,
+      });
+    } else if (role === "owner") {
+
+      console.log("Searching Owner:", userId);
+
+      user = await Owner.findOne({
+        _id: userId,
+        isDeleted: false,
+        role: "owner",
+      }
+    
     );
 
+     console.log("FOUND OWNER:", user);
+    } else if (role === "agent") {
+      user = await Agent.findOne({
+        _id: userId,
+        isDeleted: false,
+        role: "agent",
+      });
+    } else if (role === "customer") {
+      user = await User.findOne({
+        _id: userId,
+        isDeleted: false,
+        role: "customer",
+      });
+    } else {
+      return res.status(403).json({
+        success: false,
+        message: "Invalid user role",
+      });
+    }
+
+    // User not found
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -59,33 +103,11 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // Check account status
+    // Check status
     if (user.status !== "active") {
       return res.status(403).json({
         success: false,
         message: "Your account is inactive",
-      });
-    }
-
-    const verifiedToken = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-
-
-    // Make sure dynamic secret exists
-    if (!user.loginSecret) {
-      return res.status(401).json({
-        success: false,
-        message: "Login session is invalid. Please login again",
-      });
-    }
-
-
-    // Verify JWT using user's dynamic secret
-
-    // Make sure this is an access token
-    if (verifiedToken.type !== "access") {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid access token",
       });
     }
 
@@ -94,7 +116,7 @@ const authMiddleware = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.log(error);
+    console.error("AUTH MIDDLEWARE ERROR:", error);
 
     if (error.name === "TokenExpiredError") {
       return res.status(401).json({
@@ -117,9 +139,15 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
-
 const authorizeRoles = (...roles) => {
   return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,

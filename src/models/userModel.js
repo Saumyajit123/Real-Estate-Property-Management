@@ -27,14 +27,12 @@ const userSchema = new mongoose.Schema(
     },
 
     image: {
-      url: {
-        type: String,
-        default: "",
-      },
-      public_id: {
-        type: String,
-        default: "",
-      },
+      type: String,
+      default: "hello.jpg",
+    },
+    public_id: {
+      type: String,
+      trim: true,
     },
 
     role: {
@@ -72,6 +70,7 @@ const userSchema = new mongoose.Schema(
 
     loginSecret: {
       type: String,
+      select: false,
     },
 
     refreshTokenHash: {

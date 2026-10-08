@@ -15,8 +15,16 @@ router.post(
   authMiddleware,
   authorizeRoles("owner"),
   Validation.validate(PropertySehemaValiadtion.createproperty),
-  PropertyController.createproperty,
+  PropertyController.createProperty,
 );
+
+router.get(
+  "/property/:id",
+  authMiddleware,
+  authorizeRoles("owner", "admin", "customer", "agent"),
+  PropertyController.getPropertyById,
+);
+
 router.put(
   "/property/update/:id",
   upload.array("images", 5),
@@ -25,11 +33,47 @@ router.put(
   Validation.validate(PropertySehemaValiadtion.createproperty),
   PropertyController.updateProperty,
 );
-router.get("/getAllProperty",authMiddleware, PropertyController.findAllProperty);
+router.get(
+  "/getAllProperty",
+  authMiddleware,
+  PropertyController.findAllProperty,
+);
 
-router.delete("/softdeleteproperty/:id",authMiddleware,authorizeRoles('owner'),PropertyController.SoftdeleteProperty);
-router.patch("/retrivedeletedproperty/:id",authMiddleware,authorizeRoles('owner'),PropertyController.retriveDeletedProperty);
-router.delete("/delete/property/Permanently/:id",authMiddleware,authorizeRoles('owner'),PropertyController.deletePropertyPermanent);
-router.patch("/approveproperty",authMiddleware,authorizeRoles('admin'),PropertyController.approveProperty)
+router.delete(
+  "/softdeleteproperty/:id",
+  authMiddleware,
+  authorizeRoles("owner", "admin"),
+  PropertyController.SoftdeleteProperty,
+);
+router.patch(
+  "/retrivedeletedproperty/:id",
+  authMiddleware,
+  authorizeRoles("owner", "admin"),
+  PropertyController.retriveDeletedProperty,
+);
+router.delete(
+  "/delete/property/Permanently/:id",
+  authMiddleware,
+  authorizeRoles("owner", "admin"),
+  PropertyController.deletePropertyPermanent,
+);
+router.patch(
+  "/approveproperty/:id",
+  authMiddleware,
+  authorizeRoles("admin"),
+  PropertyController.approveProperty,
+);
+router.get(
+  "/my-approved-properties",
+  authMiddleware,
+  authorizeRoles("agent"),
+  PropertyController.getMyApprovedProperties,
+);
+
+router.get(
+  "/public-approved",
+  authMiddleware,
+  PropertyController.getPublicApprovedProperties
+);
 
 module.exports = router;

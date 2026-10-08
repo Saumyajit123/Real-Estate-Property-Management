@@ -4,6 +4,137 @@ const Lease = require("../../models/leaseModel");
 const Property = require("../../models/property");
 const RentalApplication = require("../../models/rentalApplicationModel");
 const User = require("../../models/userModel");
+const Owner = require('../../models/ownerModel');
+const statuscode = require("../../utils/statuscode");
+
+const getLeaseAggregation = async (filters = {}) => {
+  const match = {};
+
+  if (filters.agent) {
+    match.agent = new mongoose.Types.ObjectId(filters.agent);
+  }
+
+  if (filters.owner) {
+    match.owner = new mongoose.Types.ObjectId(filters.owner);
+  }
+
+  if (filters.tenant) {
+    match.tenant = new mongoose.Types.ObjectId(filters.tenant);
+  }
+
+  const leases = await Lease.aggregate([
+    // 1. Filter
+    { $match: match },
+
+    // 2. Property lookup
+    {
+      $lookup: {
+        from: "properties",
+        localField: "property",
+        foreignField: "_id",
+        as: "propertyData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$propertyData",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // 3. Tenant lookup
+    {
+      $lookup: {
+        from: "users",
+        localField: "tenant",
+        foreignField: "_id",
+        as: "tenantData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$tenantData",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // 4. Owner lookup
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "ownerData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$ownerData",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // 5. Agent lookup
+    {
+      $lookup: {
+        from: "users",
+        localField: "agent",
+        foreignField: "_id",
+        as: "agentData",
+      },
+    },
+    {
+      $unwind: {
+        path: "$agentData",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
+    // 6. Reshape output — property becomes the populated object
+    {
+      $project: {
+        _id: 1,
+        property: "$propertyData",   // ← replaces raw ID with full object
+        tenant: {
+          _id: "$tenantData._id",
+          name: "$tenantData.name",
+          email: "$tenantData.email",
+          phone: "$tenantData.phone",
+          image: "$tenantData.image",
+        },
+        owner: {
+          _id: "$ownerData._id",
+          name: "$ownerData.name",
+          email: "$ownerData.email",
+          phone: "$ownerData.phone",
+          image: "$ownerData.image",
+        },
+        agent: {
+          _id: "$agentData._id",
+          name: "$agentData.name",
+          email: "$agentData.email",
+          phone: "$agentData.phone",
+          image: "$agentData.image",
+        },
+        rentalApplication: 1,
+        startDate: 1,
+        endDate: 1,
+        monthlyRent: 1,
+        securityDeposit: 1,
+        agreementDocument: 1,
+        status: 1,
+        terminationReason: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+
+    // 7. Newest first
+    { $sort: { createdAt: -1 } },
+  ]);
+
+  return leases;
+};
 
 class LeaseController {
   // Create lease:
@@ -105,7 +236,7 @@ class LeaseController {
       }
 
       // Verify owner:
-      const owner = await User.findOne({
+      const owner = await Owner.findOne({
         _id: application.owner,
         isDeleted: false,
       }).select("_id name email role");
@@ -170,56 +301,161 @@ class LeaseController {
   }
 
   // Get all lease(Admin):
-  async getAllLeases(req, res) {
-    try {
-      const { status, property, tenant, owner, agent } = req.body;
+ async getAllLeases(req, res) {
+  try {
+    const leases = await Lease.aggregate([
+      // =====================================================
+      // 1. GET ALL LEASES (sorted newest first)
+      // =====================================================
+      {
+        $sort: { createdAt: -1 },
+      },
 
-      const matchStage = {};
+      // =====================================================
+      // 2. LOOKUP PROPERTY
+      // =====================================================
+      {
+        $lookup: {
+          from: "properties",
+          localField: "property",
+          foreignField: "_id",
+          as: "propertyData",
+        },
+      },
+      {
+        $unwind: {
+          path: "$propertyData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
 
-      if (status) {
-        matchStage.status = status;
-      }
+      // =====================================================
+      // 3. LOOKUP TENANT (User collection)
+      // =====================================================
+      {
+        $lookup: {
+          from: "users",
+          localField: "tenant",
+          foreignField: "_id",
+          as: "tenantData",
+        },
+      },
+      {
+        $unwind: {
+          path: "$tenantData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
 
-      if (property) {
-        matchStage.property = new mongoose.Types.ObjectId(property);
-      }
+      // =====================================================
+      // 4. LOOKUP OWNER (Owner collection)
+      // =====================================================
+      {
+        $lookup: {
+          from: "owners",
+          localField: "owner",
+          foreignField: "_id",
+          as: "ownerData",
+        },
+      },
+      {
+        $unwind: {
+          path: "$ownerData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
 
-      if (tenant) {
-        matchStage.tenant = new mongoose.Types.ObjectId(tenant);
-      }
+      // =====================================================
+      // 5. LOOKUP AGENT (Agent collection)
+      // =====================================================
+      {
+        $lookup: {
+          from: "agents",
+          localField: "agent",
+          foreignField: "_id",
+          as: "agentData",
+        },
+      },
+      {
+        $unwind: {
+          path: "$agentData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
 
-      if (owner) {
-        matchStage.owner = new mongoose.Types.ObjectId(owner);
-      }
+      // =====================================================
+      // 6. RESHAPE OUTPUT — matches frontend Lease type
+      // =====================================================
+      {
+        $project: {
+          _id: 1,
 
-      if (agent) {
-        matchStage.agent = new mongoose.Types.ObjectId(agent);
-      }
+          // ✅ property → full object
+          property: "$propertyData",
 
-      const leases = await this.getLeaseAggregation(matchStage);
+          // ✅ tenant → name, email, phone, image only
+          tenant: {
+            _id: "$tenantData._id",
+            name: "$tenantData.name",
+            email: "$tenantData.email",
+            phone: "$tenantData.phone",
+            image: "$tenantData.image",
+          },
 
-      return res.status(200).json({
-        success: true,
-        count: leases.length,
-        data: leases,
-      });
-    } catch (error) {
-      console.error(error);
+          // ✅ owner → name, email, phone, image only
+          owner: {
+            _id: "$ownerData._id",
+            name: "$ownerData.name",
+            email: "$ownerData.email",
+            phone: "$ownerData.phone",
+            image: "$ownerData.image",
+          },
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to fetch leases",
-        error: error.message,
-      });
-    }
+          // ✅ agent → name, email, phone, image only (null if no agent)
+          agent: {
+            _id: "$agentData._id",
+            name: "$agentData.name",
+            email: "$agentData.email",
+            phone: "$agentData.phone",
+            image: "$agentData.image",
+          },
+
+          rentalApplication: 1,
+          startDate: 1,
+          endDate: 1,
+          monthlyRent: 1,
+          securityDeposit: 1,
+          agreementDocument: 1,
+          status: 1,
+          terminationReason: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: leases.length,
+      data: leases,
+    });
+  } catch (error) {
+    console.error("GET ALL LEASES ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch leases",
+      error: error.message,
+    });
   }
+}
 
   // Get my leases(customer):
   async getMyLeases(req, res) {
     try {
-      const leases = await this.getLeaseAggregation({
+      const leases = await getLeaseAggregation({
         tenant: req.user._id,
-      }).sort({createdAt: -1});
+      });
 
       return res.status(200).json({
         success: true,
@@ -238,32 +474,159 @@ class LeaseController {
   }
 
   // Get owner leases:
-  async getOwnerLeases(req, res) {
-    try {
-      const leases = await this.getLeaseAggregation({
-        owner: req.user._id,
-      });
+  async getOwnerLeases(req, res){
+  try {
+    const leases = await Lease.aggregate([
+      // 1. Get only this owner's leases
+      {
+        $match: {
+          owner: req.user._id,
+        },
+      },
 
-      return res.status(200).json({
-        success: true,
-        count: leases.length,
-        data: leases,
-      });
-    } catch (error) {
-      console.error(error);
+      // 2. Get property
+      {
+        $lookup: {
+          from: "properties",
+          localField: "property",
+          foreignField: "_id",
+          as: "propertyData",
+        },
+      },
 
-      return res.status(500).json({
-        success: false,
-        message: "Failed to fetch owner leases",
-        error: error.message,
-      });
-    }
+      {
+        $unwind: "$propertyData",
+      },
+
+      // 3. Only owner-direct properties
+      {
+        $match: {
+          "propertyData.owner": req.user._id,
+          $or: [
+            { "propertyData.agentId": null },
+            { "propertyData.agentId": { $exists: false } },
+          ],
+        },
+      },
+
+      // 4. Get tenant
+      {
+        $lookup: {
+          from: "users",
+          localField: "tenant",
+          foreignField: "_id",
+          as: "tenantData",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$tenantData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // 5. Get owner
+      {
+        $lookup: {
+          from: "users",
+          localField: "owner",
+          foreignField: "_id",
+          as: "ownerData",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$ownerData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // 6. Get agent
+      {
+        $lookup: {
+          from: "agents",
+          localField: "agent",
+          foreignField: "_id",
+          as: "agentData",
+        },
+      },
+
+      {
+        $unwind: {
+          path: "$agentData",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+
+      // 7. Optional: clean response
+      // 7. Optional: clean response
+{
+  $project: {
+    // ✅ Rename propertyData → property
+    property: "$propertyData",
+    tenant: {
+      _id: "$tenantData._id",
+      name: "$tenantData.name",
+      email: "$tenantData.email",
+      phone: "$tenantData.phone",
+      image: "$tenantData.image",
+    },
+    owner: {
+      _id: "$ownerData._id",
+      name: "$ownerData.name",
+      email: "$ownerData.email",
+      phone: "$ownerData.phone",
+      image: "$ownerData.image",
+    },
+    agent: {
+      _id: "$agentData._id",
+      name: "$agentData.name",
+      email: "$agentData.email",
+      phone: "$agentData.phone",
+      image: "$agentData.image",
+    },
+    rentalApplication: 1,
+    startDate: 1,
+    endDate: 1,
+    monthlyRent: 1,
+    securityDeposit: 1,
+    agreementDocument: 1,
+    status: 1,
+    terminationReason: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  },
+},
+
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: leases.length,
+      data: leases,
+    });
+  } catch (error) {
+    console.error("GET OWNER LEASES ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch owner leases",
+      error: error.message,
+    });
   }
+};
 
   // Get agent leases:
   async getAgentLeases(req, res) {
     try {
-      const leases = await this.getLeaseAggregation({
+      const leases = await getLeaseAggregation({
         agent: req.user._id,
       });
 
@@ -363,7 +726,7 @@ class LeaseController {
         monthlyRent,
         securityDeposit,
         agreementDocument,
-      } = req.bosy;
+      } = req.body;
 
       const lease = await Lease.findById(id);
 
@@ -376,12 +739,12 @@ class LeaseController {
 
       // Only owner and admin can update:
       if (
-        req.user.role !== "admin" &&
+        lease.agent.toString() !== req.user._id.toString() &&
         lease.owner.toString() !== req.user._id.toString()
       ) {
         return res.status(403).json({
           success: false,
-          message: "Only the owner or admin can update this lease",
+          message: "Only the owner or agent can update this lease",
         });
       }
 
@@ -463,7 +826,7 @@ class LeaseController {
       }
 
       if (
-        req.user.role !== "admin" &&
+        lease.agent.toString() !== req.user._id.toString() &&
         lease.owner.toString() !== req.user._id.toString()
       ) {
         return res.status(403).json({
@@ -589,6 +952,23 @@ class LeaseController {
         message: "Failed to expire lease",
         error: error.message,
       });
+    }
+  }
+
+  async deleteLease(req,res){
+    try {
+      const{id} = req.params;
+      const deleteLease = await Lease.findByIdAndDelete(id);
+      return res.status(statuscode.OK).json({
+        status:true,
+        message:"Lease deteted succesfully"
+      })
+      
+    } catch (error) {
+      return res.status(statuscode.SERVER_ERROR).json({
+        status:false,
+        message:error.message
+      })
     }
   }
 }

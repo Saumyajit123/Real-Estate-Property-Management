@@ -4,7 +4,7 @@ const leaseSchema = new mongoose.Schema(
   {
     property: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Property",
+      ref: "property",
       required: true,
     },
 

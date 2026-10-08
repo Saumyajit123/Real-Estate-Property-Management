@@ -63,6 +63,20 @@ class PropertySchemaValidation {
       "any.required": "Bathrooms quantity is required",
     }),
 
+    amenities: joi.array().items(joi.string().trim()).optional().messages({
+      "array.base": "Amenities must be an array",
+      "string.base": "Each amenity must be a string",
+    }),
+
+    agentId: joi
+      .string()
+      .pattern(/^[0-9a-fA-F]{24}$/)
+      .optional()
+      .allow("")
+      .messages({
+        "string.pattern.base": "Invalid Agent ID",
+      }),
+
     furnishingStatus: joi
       .string()
       .valid("Furnished", "Semi-Furnished", "Unfurnished")

@@ -1,7 +1,7 @@
 const bcryptjs = require("bcryptjs");
 // const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
-
+const jwt = require("jsonwebtoken");
 const User = require("../../models/userModel");
 const Agent = require("../../models/agentmodel");
 const Owner = require("../../models/ownerModel");
@@ -23,11 +23,13 @@ const {
 } = require("../../services/emailService");
 const createNotification = require("../../services/notificationService");
 const pagination = require("../../utils/pagination");
-const { transporter, verifyEmailOtp } = require("../../config/sendMail");
+const transporter = require("../../config/email.config");
 const Otp = require("../../models/otpModel");
+const statuscode = require("../../utils/statuscode");
+const cloudinary = require("../../config/cloudinary.config");
+const verifyEmailOTP = require("../../utils/sendEmail");
 
 class AuthController {
-  // Registration:
   async register(req, res) {
     try {
       const { name, email, password, phone } = req.body;
@@ -38,6 +40,10 @@ class AuthController {
       });
 
       if (existingUser) {
+        if (req.file) {
+          await cloudinary.uploader.destroy(req.file.filename);
+        }
+
         return res.status(409).json({
           success: false,
           message: "User with this email already exists",
@@ -50,7 +56,7 @@ class AuthController {
 
       const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-      const user = await User.create({
+      const data = new User({
         name,
         email,
         password: hashedPassword,
@@ -63,37 +69,19 @@ class AuthController {
         isDeleted: false,
       });
 
-      await sendMail(
-        email,
-        "Real Estate - Email Verification",
-        `
-        <h2>Welcome ${name}</h2>
-        <h2>Password :  ${password}</h2>
-        <h2>Role : ${user.role}</h2>
+      if (req.file) {
+        data.image = req.file.path;
+        data.public_id = req.file.filename;
+      }
 
+      const user = await data.save();
 
-        <p>
-          Thank you for registering with our
-          Real Estate Management System.
-        </p>
-
-        <p>Your email verification OTP is:</p>
-
-        <h1>${otpdata.otp}</h1>
-
-        <p>This OTP will expire in 10 minutes.</p>
-
-        <p>Please do not share this OTP with anyone.</p>
-      `,
-      );
+      await verifyEmailOTP(req, user,"User");
 
       return res.status(201).json({
         success: true,
         message: "Registration successful. OTP sent to your email.",
-        data: {
-          userId: user._id,
-          email: user.email,
-        },
+        data: user,
       });
     } catch (error) {
       console.error(error);
@@ -105,98 +93,215 @@ class AuthController {
       });
     }
   }
-
-  // Verify Email OTP:
   async verify(req, res) {
     try {
       const { email, otp } = req.body;
-      // Check if all required fields are provided
+
       if (!email || !otp) {
         return res.status(400).json({
-          status: false,
-          message: "All fields are required",
+          success: false,
+          message: "Email and OTP are required",
         });
       }
-      const existingUser = await User.findOne({ email });
 
-      // Check if email doesn't exists
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // ============================================
+      // Find user from all models
+      // ============================================
+
+      let existingUser = null;
+      let userModel = null;
+
+      // 1. Check User model
+      existingUser = await User.findOne({
+        email
+      });
+
+      if (existingUser) {
+        userModel = "User";
+      }
+
+      // 2. Check Owner model
+      if (!existingUser) {
+        existingUser = await Owner.findOne({
+          email: normalizedEmail,
+        });
+
+        if (existingUser) {
+          userModel = "Owner";
+        }
+      }
+
+      // 3. Check Agent model
+      if (!existingUser) {
+        existingUser = await Agent.findOne({
+          email: normalizedEmail,
+        });
+
+        if (existingUser) {
+          userModel = "Agent";
+        }
+      }
+
+      // ============================================
+      // User not found
+      // ============================================
+
       if (!existingUser) {
         return res.status(404).json({
-          status: "failed",
-          message: "User doesn't exists",
+          success: false,
+          message: "User doesn't exist",
         });
       }
 
-      // Check if email is already verified
-      if (existingUser.isVerified) {
+      // ============================================
+      // Check email already verified
+      // ============================================
+
+      if (existingUser.isEmailVerified) {
         return res.status(400).json({
-          status: false,
+          success: false,
           message: "Email is already verified",
         });
       }
-      // Check if there is a matching email verification OTP
+
+      // ============================================
+      // Find OTP
+      // ============================================
+
       const emailVerification = await Otp.findOne({
         userId: existingUser._id,
-        otp,
+        userModel: userModel,
+        otp: otp,
       });
 
-      if (!emailVerification) {
-        if (!existingUser.isVerified) {
-          // console.log(existingUser);
-          await verifyEmailOtp(req, existingUser);
+      // ============================================
+      // Invalid OTP
+      // ============================================
 
-          return res.status(StatusCode.BAD_REQUEST).json({
-            status: false,
-            message: "Invalid OTP, new OTP sent to your email",
-          });
-        }
+      if (!emailVerification) {
+        await verifyEmailOTP(existingUser, userModel);
 
         return res.status(400).json({
-          status: false,
-          message: "Invalid OTP",
+          success: false,
+          message: "Invalid OTP, new OTP sent to your email",
         });
       }
 
-      // Check if OTP is expired
+      // ============================================
+      // Check OTP expiration
+      // ============================================
+
       const currentTime = new Date();
-      // 10 * 60 * 1000 calculates the expiration period in milliseconds(10 minutes).
+
       const expirationTime = new Date(
         emailVerification.createdAt.getTime() + 10 * 60 * 1000,
       );
 
       if (currentTime > expirationTime) {
-        // OTP expired, send new OTP
-        await verifyEmailOTP(req, existingUser);
-        return res.status(StatusCode.BAD_REQUEST).json({
-          status: "failed",
+        await verifyEmailOtp(existingUser, userModel);
+
+        return res.status(400).json({
+          success: false,
           message: "OTP expired, new OTP sent to your email",
         });
       }
-      // OTP is valid and not expired, mark email as verified
-      existingUser.isVerified = true;
+
+      // ============================================
+      // OTP valid
+      // ============================================
+
+      existingUser.isEmailVerified = true;
+
       await existingUser.save();
 
-      // Delete email verification document
-      await Otp.deleteMany({ userId: existingUser._id });
+      // ============================================
+      // Delete OTP
+      // ============================================
+
+      await Otp.deleteMany({
+        userId: existingUser._id,
+        userModel: userModel,
+      });
+
+      // ============================================
+      // Success
+      // ============================================
+
       return res.status(200).json({
-        status: true,
+        success: true,
         message: "Email verified successfully",
+        data: {
+          email: existingUser.email,
+          role: existingUser.role,
+          model: userModel,
+        },
       });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({
-        status: false,
-        message: "Unable to verify email, please try again later",
+      console.error("VERIFY EMAIL ERROR:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Email verification failed",
+        error: error.message,
       });
     }
   }
-
-  // Resend Email otp:
   async resendEmailOTP(req, res) {
     try {
       const { email } = req.body;
 
-      const user = await User.findOne({ email });
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is required",
+        });
+      }
+
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // ============================================
+      // Find user from all models
+      // ============================================
+
+      let user = null;
+      let userModel = null;
+
+      // User model
+      user = await User.findOne({
+        email: normalizedEmail,
+      });
+
+      if (user) {
+        userModel = "User";
+      }
+
+      // Owner model
+      if (!user) {
+        user = await Owner.findOne({
+          email: normalizedEmail,
+        });
+
+        if (user) {
+          userModel = "Owner";
+        }
+      }
+
+      // Agent model
+      if (!user) {
+        user = await Agent.findOne({
+          email: normalizedEmail,
+        });
+
+        if (user) {
+          userModel = "Agent";
+        }
+      }
+
+      // ============================================
+      // User not found
+      // ============================================
 
       if (!user) {
         return res.status(404).json({
@@ -205,6 +310,10 @@ class AuthController {
         });
       }
 
+      // ============================================
+      // Check email verification
+      // ============================================
+
       if (user.isEmailVerified) {
         return res.status(400).json({
           success: false,
@@ -212,30 +321,40 @@ class AuthController {
         });
       }
 
+      // ============================================
+      // Generate new OTP
+      // ============================================
+
       const otpdata = generateOTP();
 
       user.emailOtp = otpdata.otp;
+
       user.emailOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-      await user.save();
+      // ============================================
+      // Save user
+      // ============================================
 
-      await sendMail(
-        email,
-        "Real Estate - New Verification OTP",
-        `
-        <h2>Email Verification</h2>
+      const data = await user.save();
 
-        <p>Your new verification OTP is:</p>
+      // ============================================
+      // Send OTP email
+      // ============================================
 
-        <h1>${otpdata.otp}</h1>
+      await verifyEmailOTP(req,data,userModel);
 
-        <p>This OTP will expire in 10 minutes.</p>
-      `,
-      );
+      // ============================================
+      // Response
+      // ============================================
 
       return res.status(200).json({
         success: true,
         message: "New OTP sent successfully",
+        data: {
+          email: data.email,
+          role: data.role,
+          model: userModel,
+        },
       });
     } catch (error) {
       console.error("RESEND OTP ERROR:", error);
@@ -247,131 +366,281 @@ class AuthController {
       });
     }
   }
-
-  // Login:
   async login(req, res) {
-    try {
-      const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-      const user = await User.findOne({
-        email,
-        isDeleted: false,
-      }).select("+loginSecret +refreshTokenHash");
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
+    }
 
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid email or password",
-        });
+    // ------------------------------------------------
+    // 1. Find user from different models
+    // ------------------------------------------------
+
+    let user = null;
+    let modelName = null;
+
+    // Check User model
+    user = await User.findOne({
+      email: email.toLowerCase(),
+      isDeleted: false,
+    }).select("+password +loginSecret +refreshTokenHash");
+
+    if (user) {
+      modelName = "User";
+    }
+
+    // If not found, check Owner model
+    if (!user) {
+      user = await Owner.findOne({
+        email: email.toLowerCase(),
+      }).select("+password +loginSecret +refreshTokenHash");
+
+      if (user) {
+        modelName = "Owner";
       }
+    }
 
-      if (!user.isEmailVerified) {
-        return res.status(403).json({
-          success: false,
-          message: "Please verify your email before logging in",
-        });
+    // If you have Agent model, you can add:
+    
+    if (!user) {
+      user = await Agent.findOne({
+        email: email.toLowerCase(),
+      }).select("+password +loginSecret +refreshTokenHash");
+
+      if (user) {
+        modelName = "Agent";
       }
+    }
+    
 
-      if (user.status !== "active") {
-        return res.status(403).json({
-          success: false,
-          message: "Your account is not active",
-        });
-      }
+    // ------------------------------------------------
+    // 2. User not found
+    // ------------------------------------------------
 
-      const isPasswordCorrect = await bcryptjs.compare(password, user.password);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
 
-      if (!isPasswordCorrect) {
-        return res.status(401).json({
-          success: false,
-          message: "Invalid email or password",
-        });
-      }
+    // ------------------------------------------------
+    // 3. Check email verification
+    // ------------------------------------------------
 
-      // Login secret key:
-      const loginSecret = generateLoginSecret();
-      user.loginSecret = loginSecret;
+    if (!user.isEmailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Please verify your email before logging in",
+      });
+    }
 
-      const accessToken = generateAccessToken(user);
-      const refreshToken = generateRefreshToken(user);
+    // ------------------------------------------------
+    // 4. Check account status
+    // ------------------------------------------------
 
-      const refreshTokenHash = await bcryptjs.hash(refreshToken, 10);
-      user.refreshTokenHash = refreshTokenHash;
+    if (user.status !== "active") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is not active",
+      });
+    }
 
-      user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    // ------------------------------------------------
+    // 5. Check password
+    // ------------------------------------------------
 
-      await user.save();
+    const isPasswordCorrect = await bcryptjs.compare(
+      password,
+      user.password
+    );
 
-      return res.status(200).json({
-        success: true,
-        message: "Login successful",
-        data: {
-          accessToken,
-          refreshToken,
-          user: {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone,
-            role: user.role,
-            image: user.image,
-            status: user.status,
-            isEmailVerified: user.isEmailVerified,
-            loginSecret: user.loginSecret,
-          },
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // ------------------------------------------------
+    // 6. Generate login secret
+    // ------------------------------------------------
+
+    const loginSecret = generateLoginSecret();
+
+    user.loginSecret = loginSecret;
+
+    // ------------------------------------------------
+    // 7. Generate tokens
+    // ------------------------------------------------
+
+    const accessToken = generateAccessToken(user);
+
+    const refreshToken = generateRefreshToken(user);
+
+    // ------------------------------------------------
+    // 8. Hash refresh token
+    // ------------------------------------------------
+
+    const refreshTokenHash = await bcryptjs.hash(
+      refreshToken,
+      10
+    );
+
+    user.refreshTokenHash = refreshTokenHash;
+
+    user.refreshTokenExpires = new Date(
+      Date.now() + 7 * 24 * 60 * 60 * 1000
+    );
+
+    // ------------------------------------------------
+    // 9. Save login information
+    // ------------------------------------------------
+
+    await user.save();
+
+    // ------------------------------------------------
+    // 10. Response
+    // ------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+
+      data: {
+        accessToken,
+        refreshToken,
+
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: user.role,
+          image: user.image || user.profileImage || null,
+          status: user.status,
+          isEmailVerified: user.isEmailVerified,
+
+          // You can remove this from production response
+          // loginSecret: user.loginSecret,
         },
-      });
-    } catch (error) {
-      console.error(error);
 
-      return res.status(500).json({
+        model: modelName,
+      },
+    });
+
+  } catch (error) {
+    console.error("LOGIN ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Login failed",
+      error: error.message,
+    });
+  }
+}
+
+
+async logout(req, res) {
+  try {
+    // ------------------------------------------------
+    // 1. Get logged-in user information
+    // ------------------------------------------------
+
+    const userId = req.user.id;
+    const role = req.user.role;
+
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        message: "Login failed",
-        error: error.message,
+        message: "Unauthorized",
       });
     }
-  }
 
-  // Logout:
-  async logout(req, res) {
-    try {
-      const userId = req.user.id;
+    // ------------------------------------------------
+    // 2. Find user from the correct model
+    // ------------------------------------------------
 
-      const user = await User.findById(userId);
+    let user = null;
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+    if (role === "user" || role === "customer" || role === "admin") {
+      user = await User.findById(userId);
+    } else if (role === "owner") {
+      user = await Owner.findById(userId);
+    } else if (role === "agent") {
+      user = await Agent.findById(userId);
+    }
 
-      //Destroy login credentials:
-      user.loginSecret = undefined;
-      user.refreshTokenHash = undefined;
-      user.refreshTokenExpires = undefined;
+    // ------------------------------------------------
+    // 3. User not found
+    // ------------------------------------------------
 
-      await user.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Logout successful",
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: "Logout failed",
-        error: error.message,
+        message: "User not found",
       });
     }
-  }
 
-  // Get profile:
+    // ------------------------------------------------
+    // 4. Clear login information
+    // ------------------------------------------------
+
+    user.loginSecret = null;
+    user.refreshTokenHash = null;
+    user.refreshTokenExpires = null;
+
+    // ------------------------------------------------
+    // 5. Save changes
+    // ------------------------------------------------
+
+    await user.save();
+
+    // ------------------------------------------------
+    // 6. Clear cookies
+    // ------------------------------------------------
+
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+
+    // ------------------------------------------------
+    // 7. Response
+    // ------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      message: "Logout successful",
+    });
+
+  } catch (error) {
+    console.error("LOGOUT ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Logout failed",
+      error: error.message,
+    });
+  }
+}
+
+
   async getProfile(req, res) {
     try {
-      const user = await User.findById(req.user.id).select(
+      const user = await User.findById(req.user._id).select(
         "-password -loginSecret -refreshTokenHash -emailOtp -emailOtpExpires -resetOtp -resetOtpExpires",
       );
 
@@ -399,269 +668,533 @@ class AuthController {
   }
 
   // Update profile:
-  async updateProfile(req, res) {
+  async updateprofile(req, res) {
     try {
-      const { name, phone, image } = req.body;
+      const { name, phone } = req.body;
+      const profiledatabyid = await User.findById(req.user._id);
 
-      const user = await User.findById(req.user.id);
+      let image = profiledatabyid.image;
+      let public_id = profiledatabyid.public_id;
 
-      if (!user) {
-        return res.status(404).json({
+      if (req.file) {
+        if (profiledatabyid.public_id) {
+          await cloudinary.uploader.destroy(profiledatabyid.public_id);
+        }
+
+        image = req.file.path;
+        public_id = req.file.filename;
+      }
+
+      const profiledata = await User.findByIdAndUpdate(
+        {
+          _id: req.user._id,
+          isDeleted: false,
+        },
+        { name, phone, image },
+        { new: true },
+      );
+
+      if (!profiledata && profiledata.length === 0) {
+        return res.status(statuscode.NOT_FOUND).json({
           success: false,
-          message: "User not found",
+          message: "no product available",
+        });
+      } else {
+        return res.status(statuscode.OK).json({
+          success: true,
+          data: profiledata,
         });
       }
-
-      if (name !== undefined) {
-        user.name = name;
-      }
-
-      if (phone !== undefined) {
-        user.phone = phone;
-      }
-
-      if (avatar !== undefined) {
-        user.avatar = avatar;
-      }
-
-      await user.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Profile updated successfully",
-        data: {
-          _id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
-          avatar: user.avatar,
-          status: user.status,
-          isEmailVerified: user.isEmailVerified,
-        },
-      });
     } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
+      return res.status(statuscode.NOT_FOUND).json({
         success: false,
-        message: "Failed to update profile",
-        error: error.message,
+        message: error.message,
       });
     }
   }
 
   // Change password:
-  async changePassword(req, res) {
-    try {
-      const { currentPassword, newPassword } = req.body;
 
-      const user = await User.findById(req.user.id);
+async changePassword(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+    // ------------------------------------------------
+    // 1. Validate request body
+    // ------------------------------------------------
 
-      const isCorrect = await bcryptjs.compare(currentPassword, user.password);
-      if (!isCorrect) {
-        return res.status(400).json({
-          success: false,
-          message: "Current password is incorrect",
-        });
-      }
-
-      user.password = await bcryptjs.hash(newPassword, 10);
-
-      // Invalidate all existing sessions
-      user.loginSecret = undefined;
-      user.refreshTokenHash = undefined;
-      user.refreshTokenExpires = undefined;
-
-      await user.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Password changed successfully. Please login again.",
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
         success: false,
-        message: "Failed to change password",
-        error: error.message,
+        message: "Current password and new password are required",
       });
     }
-  }
 
-  // Forgot password:
-  async forgotPassword(req, res) {
-    try {
-      const { email } = req.body;
+    // ------------------------------------------------
+    // 2. Get logged-in user information
+    // ------------------------------------------------
 
-      const user = await UserModel.findOne({
-        email,
-        isDeleted: false,
+    const userId = req.user.id;
+    const role = req.user.role;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
       });
+    }
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found",
-        });
-      }
+    // ------------------------------------------------
+    // 3. Find user from the correct model
+    // ------------------------------------------------
 
-      const otpdata = generateOTP();
+    let user = null;
+    let modelName = null;
 
-      user.resetOtp = otpdata.otp;
-
-      user.resetOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
-
-      await user.save();
-
-      await sendMail(
-        email,
-        "Real Estate - Password Reset OTP",
-        `
-        <h2>Password Reset</h2>
-
-        <p>Hello ${user.name},</p>
-
-        <p>Your password reset OTP is:</p>
-
-        <h1>${otpdata.otp}</h1>
-
-        <p>This OTP will expire in 10 minutes.</p>
-
-        <p>If you did not request a password reset, ignore this email.</p>
-      `,
+    // User / Customer / Admin
+    if (
+      role === "user" ||
+      role === "customer" ||
+      role === "admin"
+    ) {
+      user = await User.findById(userId).select(
+        "+password +loginSecret +refreshTokenHash +refreshTokenExpires"
       );
 
-      return res.status(200).json({
-        success: true,
-        message: "Password reset OTP sent to your email",
-      });
-    } catch (error) {
-      console.error(error);
+      if (user) {
+        modelName = "User";
+      }
+    }
 
-      return res.status(500).json({
+    // Owner
+    if (!user && role === "owner") {
+      user = await Owner.findById(userId).select(
+        "+password +loginSecret +refreshTokenHash +refreshTokenExpires"
+      );
+
+      if (user) {
+        modelName = "Owner";
+      }
+    }
+
+    // Agent
+    if (!user && role === "agent") {
+      user = await Agent.findById(userId).select(
+        "+password +loginSecret +refreshTokenHash +refreshTokenExpires"
+      );
+
+      if (user) {
+        modelName = "Agent";
+      }
+    }
+
+    // ------------------------------------------------
+    // 4. User not found
+    // ------------------------------------------------
+
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: "Failed to process forgot password",
-        error: error.message,
+        message: "User not found",
       });
     }
+
+    // ------------------------------------------------
+    // 5. Check current password
+    // ------------------------------------------------
+
+    const isCorrect = await bcryptjs.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isCorrect) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    // ------------------------------------------------
+    // 6. Check new password
+    // ------------------------------------------------
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from current password",
+      });
+    }
+
+    // ------------------------------------------------
+    // 7. Hash new password
+    // ------------------------------------------------
+
+    user.password = await bcryptjs.hash(newPassword, 10);
+
+    // ------------------------------------------------
+    // 8. Invalidate all existing sessions
+    // ------------------------------------------------
+
+    user.loginSecret = undefined;
+    user.refreshTokenHash = undefined;
+    user.refreshTokenExpires = undefined;
+
+    // ------------------------------------------------
+    // 9. Save user
+    // ------------------------------------------------
+
+    await user.save();
+
+    // ------------------------------------------------
+    // 10. Response
+    // ------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully. Please login again.",
+      data: {
+        model: modelName,
+        userId: user._id,
+      },
+    });
+
+  } catch (error) {
+    console.error("CHANGE PASSWORD ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to change password",
+      error: error.message,
+    });
   }
+}
+
 
   // Reset password link:
   async resetPasswordLink(req, res) {
-    try {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(StatusCode.BAD_REQUEST).json({
-          status: false,
-          message: "Email field is required",
-        });
-      }
+  try {
+    const { email } = req.body;
 
-      const user = await User.findOne({ email });
-
-      if (!user) {
-        return res.status(StatusCode.NOT_FOUND).json({
-          status: false,
-          message: "Email doesn't exist",
-        });
-      }
-
-      //Generate token for password reset:
-      const secret = user._id + process.env.JWT_SECRET_KEY;
-      const tokenLink = jwt.sign(
-        {
-          userId: user._id,
-        },
-        secret,
-        { expiresIn: "40m" },
-      );
-      console.log(tokenLink);
-
-      // Reset Link and this link generate by frontend developer:
-      const resetLink = `${process.env.CLIENT_URL}/account/reset-password-confirm/${user._id}/${tokenLink}`;
-
-      //Send password reset email:
-      await transporter.sendMail({
-        from: process.env.MAIL_FROM,
-        to: user.email,
-        subject: "Password reset link",
-        html: `<p>Hello ${user.name},</p><p>Please <a href="${resetLink}">Click here</a> to reset your password.</p>`,
-      });
-
-      res.status(200).json({
-        status: true,
-        message: "Password reset email sent. Please check your email.",
-      });
-    } catch (error) {
-      return res.status(500).json({
+    if (!email) {
+      return res.status(statuscode.BAD_REQUEST).json({
         success: false,
-        message: error.message,
+        message: "Email field is required",
       });
     }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // ============================================
+    // Find user from all models
+    // ============================================
+
+    let user = null;
+    let userModel = null;
+
+    // 1. User model
+    user = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (user) {
+      userModel = "User";
+    }
+
+    // 2. Owner model
+    if (!user) {
+      user = await Owner.findOne({
+        email: normalizedEmail,
+      });
+
+      if (user) {
+        userModel = "Owner";
+      }
+    }
+
+    // 3. Agent model
+    if (!user) {
+      user = await Agent.findOne({
+        email: normalizedEmail,
+      });
+
+      if (user) {
+        userModel = "Agent";
+      }
+    }
+
+    // ============================================
+    // Account not found
+    // ============================================
+
+    if (!user) {
+      return res.status(statuscode.NOT_FOUND).json({
+        success: false,
+        message: "Email doesn't exist",
+      });
+    }
+
+    // ============================================
+    // Generate password reset token
+    // ============================================
+
+    const secret =
+      user._id.toString() + process.env.JWT_SECRET_KEY;
+
+    const tokenLink = jwt.sign(
+      {
+        userId: user._id,
+        userModel: userModel,
+      },
+      secret,
+      {
+        expiresIn: "40m",
+      }
+    );
+
+    console.log("RESET TOKEN:", tokenLink);
+
+    // ============================================
+    // Reset password link
+    // ============================================
+
+    const resetLink =
+      `${process.env.CLIENT_URL}` +
+      `/account/reset-password-confirm/` +
+      `${user._id}/` +
+      `${tokenLink}`;
+
+    // ============================================
+    // Send email
+    // ============================================
+
+    await transporter.sendMail({
+      from: process.env.MAIL_FROM,
+      to: user.email,
+      subject: "Password reset link",
+
+      html: `
+        <p>Hello ${user.name},</p>
+
+        <p>
+          We received a request to reset your password.
+        </p>
+
+        <p>
+          Please
+          <a href="${resetLink}">
+            Click here
+          </a>
+          to reset your password.
+        </p>
+
+        <p>
+          This password reset link will expire in 40 minutes.
+        </p>
+
+        <p>
+          If you did not request a password reset,
+          please ignore this email.
+        </p>
+      `,
+    });
+
+    // ============================================
+    // Response
+    // ============================================
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset email sent. Please check your email.",
+    });
+
+  } catch (error) {
+    console.error("RESET PASSWORD LINK ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send password reset email",
+      error: error.message,
+    });
   }
+}
 
   // Reset password:
   async resetPassword(req, res) {
-    try {
-      const { password, confirm_password } = req.body;
-      const { id, token } = req.params;
-      const user = await User.findById(id);
+  try {
+    const { password, confirm_password } = req.body;
+    const { id, token } = req.params;
 
-      if (!user) {
-        return res.status(StatusCode.BAD_REQUEST).json({
-          status: false,
-          message: "User not found",
-        });
-      }
+    // ============================================
+    // Validate password fields
+    // ============================================
 
-      //Validate token check:
-      const new_secret = user._id + process.env.JWT_SECRET_KEY;
-      jwt.verify(token, new_secret);
-
-      if (!password || !confirm_password) {
-        return res.status(400).json({
-          status: false,
-          message: "New Password and Confirm New Password are required",
-        });
-      }
-
-      if (password !== confirm_password) {
-        return res.status(StatusCode.BAD_REQUEST).json({
-          status: false,
-          message: "New Password and Confirm New Password don't match",
-        });
-      }
-
-      // Generate salt and hash new password:
-      const salt = await bcryptjs.genSalt(10);
-      const newHashPassword = await bcryptjs.hash(password, salt);
-
-      // Update user's password:
-      await User.findByIdAndUpdate(user._id, {
-        $set: { password: newHashPassword },
-      });
-
-      // Send success response:
-      res.status(StatusCode.OK).json({
-        status: "success",
-        message: "Password reset successfully",
-      });
-    } catch (error) {
-      return res.status(StatusCode.SERVER_ERROR).json({
+    if (!password || !confirm_password) {
+      return res.status(400).json({
         success: false,
-        message: error.message,
+        message:
+          "New Password and Confirm New Password are required",
       });
     }
+
+    if (password !== confirm_password) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "New Password and Confirm New Password don't match",
+      });
+    }
+
+    // ============================================
+    // Decode token first
+    // ============================================
+
+    let decodedToken;
+
+    try {
+      // We don't know the model yet, so first decode
+      // the token without verifying it.
+      decodedToken = jwt.decode(token);
+
+      if (!decodedToken || !decodedToken.userModel) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid password reset token",
+        });
+      }
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid password reset token",
+      });
+    }
+
+    const { userModel } = decodedToken;
+
+    // ============================================
+    // Select correct model
+    // ============================================
+
+    let Model;
+
+    if (userModel === "User") {
+      Model = User;
+    } else if (userModel === "Owner") {
+      Model = Owner;
+    } else if (userModel === "Agent") {
+      Model = Agent;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user model",
+      });
+    }
+
+    // ============================================
+    // Find user
+    // ============================================
+
+    const user = await Model.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // ============================================
+    // Verify reset token
+    // ============================================
+
+    const new_secret =
+      user._id.toString() + process.env.JWT_SECRET_KEY;
+
+    try {
+      const verifiedToken = jwt.verify(
+        token,
+        new_secret
+      );
+
+      // Make sure token belongs to same user
+      if (
+        verifiedToken.userId.toString() !==
+        user._id.toString()
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid password reset token",
+        });
+      }
+
+      // Make sure token belongs to same model
+      if (verifiedToken.userModel !== userModel) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid password reset token",
+        });
+      }
+
+    } catch (error) {
+      if (error.name === "TokenExpiredError") {
+        return res.status(400).json({
+          success: false,
+          message: "Password reset link has expired",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid password reset token",
+      });
+    }
+
+    // ============================================
+    // Hash new password
+    // ============================================
+
+    const salt = await bcryptjs.genSalt(10);
+
+    const newHashPassword = await bcryptjs.hash(
+      password,
+      salt
+    );
+
+    // ============================================
+    // Update password
+    // ============================================
+
+    await Model.findByIdAndUpdate(
+      user._id,
+      {
+        $set: {
+          password: newHashPassword,
+        },
+      },
+      {
+        new: true,
+      }
+    );
+
+    // ============================================
+    // Success
+    // ============================================
+
+    return res.status(200).json({
+      success: true,
+      message: "Password reset successfully",
+    });
+
+  } catch (error) {
+    console.error("RESET PASSWORD ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Password reset failed",
+      error: error.message,
+    });
   }
+}
 
   // ======================== USERS =====================================
 
@@ -1046,6 +1579,51 @@ class AuthController {
     }
   }
 
+  async deleteUser(req, res) {
+      try {
+        const { id } = req.params;
+  
+        const user = await User.findOne({
+          _id: id,
+          role: "customer",
+          isDeleted: false,
+        });
+  
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            message: "Owner not found",
+          });
+        }
+  
+        user.isDeleted = true;
+  
+        // Disable account
+        user.status = "inactive";
+  
+        // Invalidate sessions
+        user.loginSecret = undefined;
+        user.refreshTokenHash = undefined;
+        user.refreshTokenExpires = undefined;
+  
+        await user.save();
+  
+        return res.status(200).json({
+          success: true,
+          message: "User deleted successfully",
+        });
+  
+      } catch (error) {
+        console.error("DELETE USER ERROR:", error);
+  
+        return res.status(500).json({
+          success: false,
+          message: "Failed to delete user",
+          error: error.message,
+        });
+      }
+    }
+
   // Admin-delete user:
   // async deleteUser(req, res) {
   //   try {
@@ -1128,328 +1706,8 @@ class AuthController {
   // ========================== AGENTS ========================================
 
   // Get all agents:
-  async getAllAgents(req, res) {
-    try {
-      const {
-        search,
-        status,
-        isEmailVerified,
-        sortBy = "createdAt",
-        sortOrder = "desc",
-      } = req.query;
-
-      const { page, limit, skip } = pagination(req);
-
-      // FILTER:
-      const filter = {
-        role: "agent",
-        isDeleted: false,
-      };
-
-      // Search by name, email or phone
-      if (search) {
-        filter.$or = [
-          {
-            name: {
-              $regex: search,
-              $options: "i",
-            },
-          },
-          {
-            email: {
-              $regex: search,
-              $options: "i",
-            },
-          },
-          {
-            phone: {
-              $regex: search,
-              $options: "i",
-            },
-          },
-        ];
-      }
-
-      if (status) {
-        filter.status = status;
-      }
-
-      // Email verification filter
-      if (isEmailVerified !== undefined) {
-        filter.isEmailVerified = isEmailVerified === "true";
-      }
-
-      // SORT:
-      const allowedSortFields = [
-        "name",
-        "email",
-        "createdAt",
-        "updatedAt",
-        "status",
-      ];
-
-      const finalSortBy = allowedSortFields.includes(sortBy)
-        ? sortBy
-        : "createdAt";
-
-      const finalSortOrder = sortOrder === "asc" ? 1 : -1;
-
-      const sort = {
-        [finalSortBy]: finalSortOrder,
-      };
-
-      const [agents, totalAgents] = await Promise.all([
-        Agent.find(filter)
-          .select("-password -loginSecret -refreshTokenHash")
-          .sort(sort)
-          .skip(skip)
-          .limit(limit),
-
-        Agent.countDocuments(filter),
-      ]);
-
-      const totalPages = Math.ceil(totalAgents / limit);
-
-      return res.status(200).json({
-        success: true,
-        message: "Agents fetched successfully",
-        pagination: {
-          currentPage: page,
-          limit,
-          totalAgents,
-          totalPages,
-          hasNextPage: page < totalPages,
-          hasPreviousPage: page > 1,
-        },
-        filters: {
-          search: search || "",
-          status: status || "",
-          isEmailVerified:
-            isEmailVerified !== undefined ? isEmailVerified === "true" : null,
-          sortBy: finalSortBy,
-          sortOrder: finalSortOrder === 1 ? "asc" : "desc",
-        },
-
-        agents,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to get agents",
-        error: error.message,
-      });
-    }
-  }
 
   // Get agent by ID:
-  async getAgentById(req, res) {
-    try {
-      const { id } = req.params;
-
-      const agent = await Agent.findOne({
-        _id: id,
-        role: "agent",
-        isDeleted: false,
-      }).select("-password -loginSecret -refreshTokenHash");
-
-      if (!agent) {
-        return res.status(404).json({
-          success: false,
-          message: "Agent not found",
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        agent,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to get agent",
-        error: error.message,
-      });
-    }
-  }
-
-  // Update Agent:
-  // async updateAgent(req, res) {
-  //   try {
-  //     const { id } = req.params;
-
-  //     const agent = await Agent.findOne({
-  //       _id: id,
-  //       role: "agent",
-  //       isDeleted: false,
-  //     });
-
-  //     if (!agent) {
-  //       return res.status(404).json({
-  //         success: false,
-  //         message: "Agent not found",
-  //       });
-  //     }
-
-  //     const { name, email, phone, image } = req.body;
-
-  //     if (email && email !== agent.email) {
-  //       const existingAgent = await Agent.findOne({
-  //         email,
-  //         _id: { $ne: id },
-  //         isDeleted: false,
-  //       });
-
-  //       if (existingAgent) {
-  //         return res.status(409).json({
-  //           success: false,
-  //           message: "Email already exists",
-  //         });
-  //       }
-  //     }
-
-  //     const updatedAgent = await Agent.findByIdAndUpdate(
-  //       id,
-  //       {
-  //         ...(name !== undefined && { name }),
-  //         ...(email !== undefined && { email }),
-  //         ...(phone !== undefined && { phone }),
-  //         ...(image !== undefined && { image }),
-  //       },
-  //       {
-  //         new: true,
-  //         runValidators: true,
-  //       },
-  //     ).select("-password -loginSecret -refreshTokenHash");
-
-  //     return res.status(200).json({
-  //       success: true,
-  //       message: "Agent updated successfully",
-  //       agent: updatedAgent,
-  //     });
-  //   } catch (error) {
-  //     console.error(error);
-
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Failed to update agent",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
-
-  // Update agent role:
-  // async updateAgentRole(req, res) {
-  //   try {
-  //     const { id } = req.params;
-  //     const { role } = req.body;
-
-  //     const allowedRoles = ["agent", "owner", "customer"];
-
-  //     if (!allowedRoles.includes(role)) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Invalid role",
-  //       });
-  //     }
-
-  //     const agent = await Agent.findOne({
-  //       _id: id,
-  //       role: "agent",
-  //       isDeleted: false,
-  //     });
-
-  //     if (!agent) {
-  //       return res.status(404).json({
-  //         success: false,
-  //         message: "Agent not found",
-  //       });
-  //     }
-
-  //     agent.role = role;
-
-  //     // Invalidate current sessions after role change
-  //     agent.loginSecret = undefined;
-  //     agent.refreshTokenHash = undefined;
-  //     agent.refreshTokenExpires = undefined;
-
-  //     await agent.save();
-
-  //     return res.status(200).json({
-  //       success: true,
-  //       message: "Agent role updated successfully",
-  //       role: agent.role,
-  //     });
-  //   } catch (error) {
-  //     console.error(error);
-
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Failed to update agent role",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
-
-  // Update agent status:
-  async updateAgentStatus(req, res) {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
-
-      const allowedStatuses = ["active", "inactive", "blocked"];
-
-      if (!allowedStatuses.includes(status)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid status. Allowed: active, inactive, blocked",
-        });
-      }
-
-      const agent = await Agent.findById(id);
-
-      if (!agent) {
-        return res.status(404).json({
-          success: false,
-          message: "Agent not found",
-        });
-      }
-
-      agent.status = status;
-
-      // If account is disabled,
-      // invalidate existing login
-      if (status === "inactive" || status === "blocked") {
-        agent.loginSecret = undefined;
-        agent.refreshTokenHash = undefined;
-        agent.refreshTokenExpires = undefined;
-      }
-
-      await agent.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Agent status updated successfully",
-        data: {
-          _id: agent._id,
-          name: agent.name,
-          email: agent.email,
-          status: agent.status,
-        },
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update agent status",
-        error: error.message,
-      });
-    }
-  }
 
   // Delete Agent:
   // async deleteAgent(req, res) {
@@ -1535,326 +1793,6 @@ class AuthController {
   // =========================== OWNERS ======================================
 
   // Get all owners:
-  async getAllOwners(req, res) {
-    try {
-      const {
-        search,
-        status,
-        isEmailVerified,
-        sortBy = "createdAt",
-        sortOrder = "desc",
-      } = req.query;
-
-      const { page, limit, skip } = pagination(req);
-
-      // FILTER:
-      const filter = {
-        role: "owner",
-        isDeleted: false,
-      };
-
-      // Search by name, email or phone
-      if (search) {
-        filter.$or = [
-          {
-            name: {
-              $regex: search,
-              $options: "i",
-            },
-          },
-          {
-            email: {
-              $regex: search,
-              $options: "i",
-            },
-          },
-          {
-            phone: {
-              $regex: search,
-              $options: "i",
-            },
-          },
-        ];
-      }
-
-      // Status filter
-      if (status) {
-        filter.status = status;
-      }
-
-      // Email verification filter
-      if (isEmailVerified !== undefined) {
-        filter.isEmailVerified = isEmailVerified === "true";
-      }
-
-      // SORT:
-      const allowedSortFields = [
-        "name",
-        "email",
-        "createdAt",
-        "updatedAt",
-        "status",
-      ];
-
-      const finalSortBy = allowedSortFields.includes(sortBy)
-        ? sortBy
-        : "createdAt";
-
-      const finalSortOrder = sortOrder === "asc" ? 1 : -1;
-
-      const sort = {
-        [finalSortBy]: finalSortOrder,
-      };
-
-      const [owners, totalOwners] = await Promise.all([
-        Owner.find(filter)
-          .select("-password -loginSecret -refreshTokenHash")
-          .sort(sort)
-          .skip(skip)
-          .limit(limit),
-
-        Owner.countDocuments(filter),
-      ]);
-
-      const totalPages = Math.ceil(totalOwners / limit);
-
-      return res.status(200).json({
-        success: true,
-        message: "Owners fetched successfully",
-        pagination: {
-          currentPage: page,
-          limit,
-          totalOwners,
-          totalPages,
-          hasNextPage: page < totalPages,
-          hasPreviousPage: page > 1,
-        },
-        filters: {
-          search: search || "",
-          status: status || "",
-          isEmailVerified:
-            isEmailVerified !== undefined ? isEmailVerified === "true" : null,
-          sortBy: finalSortBy,
-          sortOrder: finalSortOrder === 1 ? "asc" : "desc",
-        },
-
-        owners,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to get owners",
-        error: error.message,
-      });
-    }
-  }
-
-  // Get owner by ID:
-  async getOwnerById(req, res) {
-    try {
-      const { id } = req.params;
-
-      const owner = await Owner.findOne({
-        _id: id,
-        role: "owner",
-        isDeleted: false,
-      }).select("-password -loginSecret -refreshTokenHash");
-
-      if (!owner) {
-        return res.status(404).json({
-          success: false,
-          message: "Owner not found",
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        owner,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to get owner",
-        error: error.message,
-      });
-    }
-  }
-
-  // Update owner:
-  async updateOwner(req, res) {
-    try {
-      const { id } = req.params;
-
-      const owner = await Owner.findOne({
-        _id: id,
-        role: "owner",
-        isDeleted: false,
-      });
-
-      if (!owner) {
-        return res.status(404).json({
-          success: false,
-          message: "Owner not found",
-        });
-      }
-
-      const { name, email, phone, image } = req.body;
-
-      if (email && email !== owner.email) {
-        const existingOwner = await Owner.findOne({
-          email,
-          _id: { $ne: id },
-          isDeleted: false,
-        });
-
-        if (existingOwner) {
-          return res.status(409).json({
-            success: false,
-            message: "Email already exists",
-          });
-        }
-      }
-
-      const updatedOwner = await Owner.findByIdAndUpdate(
-        id,
-        {
-          ...(name !== undefined && { name }),
-          ...(email !== undefined && { email }),
-          ...(phone !== undefined && { phone }),
-          ...(image !== undefined && { image }),
-        },
-        {
-          new: true,
-          runValidators: true,
-        },
-      ).select("-password -loginSecret -refreshTokenHash");
-
-      return res.status(200).json({
-        success: true,
-        message: "Owner updated successfully",
-        owner: updatedOwner,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update owner",
-        error: error.message,
-      });
-    }
-  }
-
-  // Update owner role:
-  // async updateOwnerRole(req, res) {
-  //   try {
-  //     const { id } = req.params;
-  //     const { role } = req.body;
-
-  //     const allowedRoles = ["owner", "agent", "customer"];
-
-  //     if (!allowedRoles.includes(role)) {
-  //       return res.status(400).json({
-  //         success: false,
-  //         message: "Invalid role",
-  //       });
-  //     }
-
-  //     const owner = await Owner.findOne({
-  //       _id: id,
-  //       role: "owner",
-  //       isDeleted: false,
-  //     });
-
-  //     if (!owner) {
-  //       return res.status(404).json({
-  //         success: false,
-  //         message: "Owner not found",
-  //       });
-  //     }
-
-  //     owner.role = role;
-
-  //     // Invalidate current sessions
-  //     owner.loginSecret = undefined;
-  //     owner.refreshTokenHash = undefined;
-  //     owner.refreshTokenExpires = undefined;
-
-  //     await owner.save();
-
-  //     return res.status(200).json({
-  //       success: true,
-  //       message: "Owner role updated successfully",
-  //       role: owner.role,
-  //     });
-  //   } catch (error) {
-  //     console.error(error);
-
-  //     return res.status(500).json({
-  //       success: false,
-  //       message: "Failed to update owner role",
-  //       error: error.message,
-  //     });
-  //   }
-  // }
-
-  // Update owner status:
-  async updateOwnerStatus(req, res) {
-    try {
-      const { id } = req.params;
-      const { status } = req.body;
-
-      const allowedStatus = ["active", "inactive", "blocked"];
-
-      if (!allowedStatus.includes(status)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid status",
-        });
-      }
-
-      const owner = await Owner.findOne({
-        _id: id,
-        role: "owner",
-        isDeleted: false,
-      });
-
-      if (!owner) {
-        return res.status(404).json({
-          success: false,
-          message: "Owner not found",
-        });
-      }
-
-      owner.status = status;
-
-      if (status !== "active") {
-        owner.loginSecret = undefined;
-        owner.refreshTokenHash = undefined;
-        owner.refreshTokenExpires = undefined;
-      }
-
-      await owner.save();
-
-      return res.status(200).json({
-        success: true,
-        message: "Owner status updated successfully",
-        status: owner.status,
-      });
-    } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Failed to update owner status",
-        error: error.message,
-      });
-    }
-  }
 
   // Delete owner:
   // async deleteOwner(req, res) {

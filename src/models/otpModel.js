@@ -6,6 +6,11 @@ const OtpSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'user', required: true
     },
+    userModel: {
+    type: String,
+    enum: ["User", "Agent","Owner"],
+    required: true,
+  },
     otp: { 
         type: String, 
         required: true

@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const agentSchema = new mongoose.Schema(
   {
+    // ==========================================
+    // Basic Information
+    // ==========================================
+
     name: {
       type: String,
       required: true,
@@ -11,35 +15,116 @@ const agentSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
+      unique: true,
+      lowercase: true,
       trim: true,
     },
 
     phone: {
       type: String,
+      required: true,
       trim: true,
     },
 
     password: {
       type: String,
       required: true,
+      select: false,
     },
 
     image: {
-      url: {
-        type: String,
-        default: "",
-      },
-      public_id: {
-        type: String,
-        default: "",
-      },
+      type: String,
+      default: null,
     },
+    public_id:{
+      type:String,
+      trim:true
+    },
+
+    // ==========================================
+    // Agent Information
+    // ==========================================
 
     role: {
       type: String,
       enum: ["agent"],
       default: "agent",
     },
+
+    licenseNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
+
+    agencyName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    experience: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+
+    specialization: [
+      {
+        type: String,
+        enum: [
+          "Residential",
+          "Commercial",
+          "Land",
+          "Rental",
+          "Luxury",
+        ],
+      },
+    ],
+
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
+      default: null,
+    },
+
+    // ==========================================
+    // Address
+    // ==========================================
+
+    address: {
+      street: {
+        type: String,
+        trim: true,
+      },
+
+      city: {
+        type: String,
+        trim: true,
+      },
+
+      state: {
+        type: String,
+        trim: true,
+      },
+
+      country: {
+        type: String,
+        trim: true,
+        default: "India",
+      },
+
+      pincode: {
+        type: String,
+        trim: true,
+      },
+    },
+
+    // ==========================================
+    // Account Status
+    // ==========================================
 
     status: {
       type: String,
@@ -52,56 +137,33 @@ const agentSchema = new mongoose.Schema(
       default: false,
     },
 
-    emailOtp: {
-      type: String,
-    },
-
-    emailOtpExpires: {
-      type: Date,
-    },
-
-    resetOtp: {
-      type: String,
-    },
-
-    resetOtpExpires: {
-      type: Date,
-    },
-
-    loginSecret: {
-      type: String,
-    },
-
-    refreshTokenHash: {
-      type: String,
-    },
-
-    refreshTokenExpires: {
-      type: Date,
-    },
-
     isDeleted: {
       type: Boolean,
       default: false,
     },
 
-    deletedAt: {
-      type: Date,
-      default: null,
+    // ==========================================
+    // Authentication
+    // ==========================================
+
+    loginSecret: {
+      type: String,
+      select: false,
     },
 
-    deletedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
+    refreshTokenHash: {
+      type: String,
+      select: false,
+    },
+
+    refreshTokenExpires: {
+      type: Date,
+      select: false,
     },
   },
   {
     timestamps: true,
-    collection: "users",
-  },
+  }
 );
 
-const AgentModel = mongoose.model("Agent", agentSchema);
-
-module.exports = AgentModel;
+module.exports = mongoose.model("Agent", agentSchema);
